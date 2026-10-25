@@ -84,3 +84,5 @@ Shokugeki no Souma — trang tiếng Việt đã biên tập trước đó:
 ![Trang 1 tiếng Việt](translations/shokugeki-no-souma/trang-001.vi.png)
 
 Hoàn tác: dùng nút **↶ Hoàn tác** hoặc **Ctrl+Z** (Mac: **⌘Z**), tối đa 30 bước trong phiên hiện tại. Hỗ trợ ô thoại, nội dung, kiểu chữ, nền phục hồi, nhập/xóa trang và ghép ảnh. Trong cửa sổ phục hồi nền, phím tắt hoàn tác từng nét cọ/tạo/xóa mặt nạ riêng. Lịch sử không được lưu trong ZIP dự án; tải lại trang sẽ xóa lịch sử.
+
+Chỉnh khung trên ảnh: chọn khung rồi kéo các nút vuông ở 8 góc/cạnh để đổi kích thước, kéo bên trong để di chuyển. Nhấn Delete/Backspace khi ảnh đang được chọn hoặc bấm Xóa ô để xóa. Escape hủy kéo; Ctrl+Z hoàn tác. Lời thoại/bản dịch được giữ khi chỉnh khung; nền phục hồi cũ được bỏ khi đổi vùng và cần tạo lại.

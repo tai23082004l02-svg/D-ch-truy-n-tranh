@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {boxHandles,handleAt,transformBox} from './box-transform.js';
 import {createHistory,snapshotProject} from './history.js';
 import { createWorker } from 'tesseract.js';
 import { LIMITS, naturalCompare, validateBox, paintBox, fitText, parseTranslations } from './core.js';
@@ -128,16 +129,20 @@ function draw() {
   const page = current(); if (!page || !state.image) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(state.image, 0, 0, canvas.width, canvas.height);
   if ($('original-toggle').checked) return;
-  for (const box of page.boxes) paintBox(ctx, box);
+  const preview=state.drag?.handle?{...state.drag.original,...dragRect(),artPatch:undefined}:null;
+  for (const box of page.boxes) paintBox(ctx,preview?.id===box.id?preview:box);
   const scale = canvas.width / Math.max(1, canvas.getBoundingClientRect().width);
-  for (const [index, box] of page.boxes.entries()) {
+  for (const [index, original] of page.boxes.entries()) {
+    const box=preview?.id===original.id?preview:original;
     ctx.save(); ctx.strokeStyle = box.id === state.selected ? '#d88426' : '#3a997d'; ctx.lineWidth = (box.id === state.selected ? 2 : 1) * scale;
     ctx.setLineDash(box.id === state.selected ? [] : [4 * scale, 3 * scale]); ctx.strokeRect(box.x, box.y, box.w, box.h);
     ctx.fillStyle = box.id === state.selected ? '#b46c1c' : '#26775d'; ctx.fillRect(box.x, Math.max(0, box.y - 17 * scale), 22 * scale, 17 * scale);
     ctx.fillStyle = '#fff'; ctx.font = `600 ${10 * scale}px Arial`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
     ctx.fillText(String(index + 1), box.x + 11 * scale, Math.max(0, box.y - 17 * scale) + 8.5 * scale); ctx.restore();
   }
-  if (state.drag) { const r = dragRect(); ctx.save(); ctx.strokeStyle = '#d88426'; ctx.lineWidth = 2 * scale; ctx.strokeRect(r.x,r.y,r.w,r.h); ctx.restore(); }
+  const focused=preview||selected();
+  if(focused){ctx.save();ctx.setLineDash([]);ctx.lineWidth=1.5*scale;ctx.strokeStyle='#d88426';ctx.fillStyle='#ffffff';for(const [,x,y]of boxHandles(focused)){ctx.fillRect(x-4*scale,y-4*scale,8*scale,8*scale);ctx.strokeRect(x-4*scale,y-4*scale,8*scale,8*scale);}ctx.restore();}
+  if (state.drag&&!state.drag.handle) { const r = dragRect(); ctx.save(); ctx.strokeStyle = '#d88426'; ctx.lineWidth = 2 * scale; ctx.strokeRect(r.x,r.y,r.w,r.h); ctx.restore(); }
 }
 function renderFields() {
   const box = selected(), page = current();
@@ -167,20 +172,35 @@ function coords(event) {
   const r = canvas.getBoundingClientRect();
   return { x: Math.max(0, Math.min(canvas.width, (event.clientX-r.left) * canvas.width/r.width)), y: Math.max(0, Math.min(canvas.height, (event.clientY-r.top) * canvas.height/r.height)) };
 }
-function dragRect() { const {start,end} = state.drag; return { x:Math.min(start.x,end.x), y:Math.min(start.y,end.y), w:Math.abs(end.x-start.x), h:Math.abs(end.y-start.y) }; }
+function dragRect() { const {start,end,handle,original} = state.drag; if(handle)return transformBox(original,start,end,handle,canvas.width,canvas.height); return { x:Math.min(start.x,end.x), y:Math.min(start.y,end.y), w:Math.abs(end.x-start.x), h:Math.abs(end.y-start.y) }; }
 canvas.addEventListener('pointerdown', e => {
   if (state.busy || !current() || $('original-toggle').checked || e.button !== 0) return;
-  const point = coords(e);
+  canvas.focus({preventScroll:true});
+  const point = coords(e),focus=selected(),scale=canvas.width/canvas.getBoundingClientRect().width;
+  const handle=!state.redrawBoxId&&focus&&handleAt(focus,point,8*scale);
+  if(handle){state.drag={start:point,end:point,handle,original:{...focus},boxId:focus.id};canvas.setPointerCapture(e.pointerId);return;}
   const box = !state.redrawBoxId&&[...current().boxes].reverse().find(b => point.x>=b.x && point.x<=b.x+b.w && point.y>=b.y && point.y<=b.y+b.h);
-  if (box) { state.selected = box.id; renderFields(); draw(); return; }
+  if (box) { state.selected = box.id; state.drag={start:point,end:point,handle:'move',original:{...box},boxId:box.id};canvas.setPointerCapture(e.pointerId);renderFields(); draw(); return; }
   if(!state.redrawBoxId)state.selected = null;
   state.drag = {start:point,end:point,boxId:state.redrawBoxId};state.redrawBoxId=null; canvas.setPointerCapture(e.pointerId); renderFields(); draw();
 });
-canvas.addEventListener('pointermove', e => { if (state.drag) { state.drag.end = coords(e); draw(); } });
+canvas.addEventListener('pointermove', e => {
+  if(state.drag){state.drag.end=coords(e);draw();return;}
+  const box=selected(),point=coords(e),handle=box&&handleAt(box,point,8*canvas.width/Math.max(1,canvas.getBoundingClientRect().width));
+  canvas.style.cursor=state.redrawBoxId||$('original-toggle').checked?'crosshair':handle?({nw:'nwse',se:'nwse',ne:'nesw',sw:'nesw',n:'ns',s:'ns',e:'ew',w:'ew'}[handle]+'-resize'):current()?.boxes.some(b=>point.x>=b.x&&point.x<=b.x+b.w&&point.y>=b.y&&point.y<=b.y+b.h)?'move':'crosshair';
+});
 canvas.addEventListener('pointerup', e => {
   if (!state.drag) return;
-  state.drag.end = coords(e); const r = dragRect(),boxId=state.drag.boxId; state.drag = null;
-  if (r.w >= 12 && r.h >= 12 && current().boxes.length < LIMITS.boxes) {
+  state.drag.end = coords(e); const drag=state.drag,r = dragRect(),boxId=drag.boxId; state.drag = null;
+  if(drag.handle){
+    const box=current()?.boxes.find(b=>b.id===boxId);
+    if(box&&Math.hypot(drag.end.x-drag.start.x,drag.end.y-drag.start.y)>3*canvas.width/canvas.getBoundingClientRect().width&&['x','y','w','h'].some(k=>box[k]!==r[k])){
+      const hadPatch=!!box.artPatch;releasePatch(box);Object.assign(box,r);markDirty();renderPages();
+      status(hadPatch?'Đã chỉnh khung. Nền phục hồi cũ đã bỏ; hãy tạo lại cho vùng mới.':'Đã chỉnh khung, giữ nguyên lời thoại và bản dịch.');
+    }
+    renderFields();draw();return;
+  }
+  if (r.w >= 12 && r.h >= 12 && (boxId||current().boxes.length < LIMITS.boxes)) {
     let box=boxId&&current().boxes.find(b=>b.id===boxId);
     if(box){releasePatch(box);Object.assign(box,r);status('Đã khoanh lại ô thoại. Nền phục hồi cũ đã bỏ; hãy tạo lại nếu dùng Chữ trên nền tranh.');}
     else{box = validateBox({...r, fontSize:32}, current().width, current().height);current().boxes.push(box);}
@@ -189,7 +209,13 @@ canvas.addEventListener('pointerup', e => {
   renderFields(); draw();
 });
 canvas.addEventListener('pointercancel', () => { state.drag = null; draw(); });
-$('original-toggle').onchange = draw;
+canvas.addEventListener('keydown',event=>{
+  if(['Delete','Backspace'].includes(event.key)&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!state.busy&&!state.drag&&!$('original-toggle').checked&&selected()){
+    event.preventDefault();$('delete-bubble').click();
+  }
+  if(event.key==='Escape'){state.drag=null;state.redrawBoxId=null;draw();}
+});
+$('original-toggle').onchange = ()=>{state.drag=null;draw();};
 new ResizeObserver(() => draw()).observe($('stage'));
 for (const [id, field, read] of [['source-text','source',el=>el.value],['translated-text','translated',el=>el.value],['font-size','fontSize',el=>Math.max(8,Math.min(160,Number(el.value)||32))],['background-color','background',el=>el.value],['bold-text','bold',el=>el.checked],['text-color','textColor',el=>el.value],['stroke-color','strokeColor',el=>el.value],['stroke-width','strokeWidth',el=>Math.max(0,Math.min(10,Number(el.value)||0))],['ocr-ink','ocrInk',el=>el.value]]) {
   $(id).addEventListener('input', event => { if (state.busy || !selected()) return; selected()[field] = read($(id)); markDirty(event); draw(); updateFitHint(); renderBubbleList(); renderPages(); });

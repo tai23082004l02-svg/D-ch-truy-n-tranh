@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {createHistory,snapshotProject} from './history.js';
 import { createWorker } from 'tesseract.js';
 import { LIMITS, naturalCompare, validateBox, paintBox, fitText, parseTranslations } from './core.js';
 import { findSpeechRegions, usableOCR, isolateCropInk } from './ocr-regions.js';
@@ -8,14 +9,44 @@ import {createArtEditor,artOCRCanvas} from './art-editor.js';
 const $ = id => document.getElementById(id);
 const canvas = $('editor'), ctx = canvas.getContext('2d');
 const state = { pages: [], active: null, selected: null, image: null, busy: false, dirty: false, controller: null, drag: null, redrawBoxId:null,webtoonOriginals:null,webtoonLayout:null };
-function releasePatch(box){const p=box.artPatch;if(p?.canvas){if(typeof p.canvas.close==='function')p.canvas.close();else p.canvas.width=1;}delete box.artPatch;}
+// Retained undo snapshots own old patches; let GC release their canvases when evicted.
+function releasePatch(box){delete box.artPatch;}
 function releasePages(pages){for(const page of pages){URL.revokeObjectURL(page.url);for(const box of page.boxes)releasePatch(box);}}
 function releaseProject(){releasePages([...state.pages,...(state.webtoonOriginals||[])]);}
 let pageLoad = 0;
 const current = () => state.pages.find(p => p.id === state.active);
 const selected = () => current()?.boxes.find(b => b.id === state.selected);
 function status(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
-function markDirty() { state.dirty = true; }
+const history=createHistory(snapshotProject(state));
+function markDirty(event) {
+  state.dirty = true;
+  const target=event?.target;
+  const group=target&&['textarea','input'].includes(target.localName)&&!['checkbox','color'].includes(target.type)?`${state.active}:${state.selected}:${target.id}`:null;
+  history.commit(snapshotProject(state,$('translation-context').value),group);
+  $('undo-button').disabled=state.busy||!history.size;
+}
+async function undo() {
+  if(state.busy||document.querySelector('dialog[open]'))return;
+  const previous=history.undo();if(!previous)return;
+  releaseProject();
+  const revive=pages=>pages?.map(p=>({...p,url:URL.createObjectURL(p.blob),boxes:p.boxes.map(b=>({...b}))}))??null;
+  state.pages=revive(previous.pages);state.webtoonOriginals=revive(previous.webtoonOriginals);state.webtoonLayout=previous.webtoonLayout;
+  $('translation-context').value=previous.context;
+  const active=previous.active,selectedId=previous.selected;
+  state.dirty=true;state.drag=null;
+  await activate(state.pages.find(p=>p.id===active)?.id||state.pages[0]?.id);
+  state.selected=current()?.boxes.some(b=>b.id===selectedId)?selectedId:null;
+  renderFields();draw();status('Đã hoàn tác thao tác trước.');
+}
+$('undo-button').onclick=undo;
+document.addEventListener('focusout',()=>history.breakGroup());
+document.addEventListener('keydown',event=>{
+  if(!(event.ctrlKey||event.metaKey)||event.altKey||event.shiftKey||event.key.toLowerCase()!=='z'||event.isComposing||document.querySelector('dialog[open]'))return;
+  const target=event.target;
+  const editing=target.closest('input,textarea,[contenteditable="true"]');
+  if(editing&&!['source-text','translated-text','font-size','background-color','text-color','stroke-color','stroke-width','translation-context'].includes(target.id))return;
+  event.preventDefault();if(!state.busy)void undo();
+});
 function assertNotAborted(signal) { if (signal.aborted) throw new DOMException('Đã dừng', 'AbortError'); }
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function withAbort(promise, signal) {
@@ -31,7 +62,8 @@ function progress(message, value = 0) { $('busy-label').textContent = message; $
 async function task(label, run) {
   if (state.busy) return;
   state.redrawBoxId=null;state.drag=null;
-  state.busy = true; state.controller = new AbortController();
+  history.breakGroup();
+  state.busy = true; updateButtons(); state.controller = new AbortController();
   document.body.classList.add('busy'); $('busy-bar').hidden = false; progress(label);
   try { await run(state.controller.signal); }
   catch (error) { console.error(error); status(error.name === 'AbortError' || state.controller.signal.aborted ? 'Đã dừng. Các bước đã hoàn thành vẫn được giữ lại.' : error.message || 'Thao tác thất bại. Hãy thử lại.', !state.controller.signal.aborted && error.name !== 'AbortError'); }
@@ -39,6 +71,7 @@ async function task(label, run) {
 }
 
 function updateButtons() {
+  $('undo-button').disabled=state.busy||!history.size;
   const has = state.pages.length > 0, box = !!selected();
   for (const id of ['save-button', 'export-button', 'ocr-button', 'translate-button', 'text-export', 'text-import', 'clear-button']) $(id).disabled = !has;
   $('delete-page').disabled = !current(); $('delete-bubble').disabled = !box; $('bubble-fields').disabled = !box;
@@ -159,7 +192,7 @@ canvas.addEventListener('pointercancel', () => { state.drag = null; draw(); });
 $('original-toggle').onchange = draw;
 new ResizeObserver(() => draw()).observe($('stage'));
 for (const [id, field, read] of [['source-text','source',el=>el.value],['translated-text','translated',el=>el.value],['font-size','fontSize',el=>Math.max(8,Math.min(160,Number(el.value)||32))],['background-color','background',el=>el.value],['bold-text','bold',el=>el.checked],['text-color','textColor',el=>el.value],['stroke-color','strokeColor',el=>el.value],['stroke-width','strokeWidth',el=>Math.max(0,Math.min(10,Number(el.value)||0))],['ocr-ink','ocrInk',el=>el.value]]) {
-  $(id).addEventListener('input', () => { if (state.busy || !selected()) return; selected()[field] = read($(id)); markDirty(); draw(); updateFitHint(); renderBubbleList(); renderPages(); });
+  $(id).addEventListener('input', event => { if (state.busy || !selected()) return; selected()[field] = read($(id)); markDirty(event); draw(); updateFitHint(); renderBubbleList(); renderPages(); });
 }
 $('delete-bubble').onclick = () => { if (state.busy || !selected()) return; releasePatch(selected());current().boxes = current().boxes.filter(b=>b.id!==state.selected); state.selected=null; markDirty(); renderFields(); renderPages(); draw(); };
 $('box-mode').onchange=()=>{if(state.busy||!selected())return;const box=selected();box.mode=$('box-mode').value;if(box.mode==='art'){box.textColor='#ffffff';box.strokeColor='#111111';box.strokeWidth=3;}else{box.textColor='#151515';box.strokeWidth=0;}markDirty();renderFields();draw();};
@@ -216,7 +249,7 @@ $('delete-page').onclick = () => {
   if(state.busy || !current() || !confirm('Xóa trang này và toàn bộ ô thoại trên trang?')) return;
   const index=state.pages.indexOf(current()); releasePages([current()]); state.pages.splice(index,1); markDirty(); activate(state.pages[Math.min(index,state.pages.length-1)]?.id);
 };
-$('clear-button').onclick = () => { if(state.busy || !confirm('Xóa chương hiện tại và bản ảnh gốc dự phòng? Hãy lưu dự án trước nếu bạn muốn mở lại.')) return; releaseProject();state.pages=[];state.webtoonOriginals=null;state.webtoonLayout=null;state.dirty=false; activate(null);status('Đã xóa chương. Bạn có thể nhập chương mới.'); };
+$('clear-button').onclick = () => { if(state.busy || !confirm('Xóa chương hiện tại và bản ảnh gốc dự phòng? Hãy lưu dự án trước nếu bạn muốn mở lại.')) return; releaseProject();state.pages=[];state.webtoonOriginals=null;state.webtoonLayout=null;markDirty(); activate(null);status('Đã xóa chương. Bạn có thể nhập chương mới.'); };
 
 $('webtoon-button').onclick=()=>{if(state.busy)return;$('webtoon-summary').textContent=`Ghép ${state.pages.length} ảnh theo đúng thứ tự đang có. Nhập đủ các phần ZIP trước để nối cả ô thoại ở ranh giới giữa hai phần.`;$('webtoon-dialog').showModal();};
 $('webtoon-start').onclick=()=>{
@@ -402,7 +435,7 @@ $('project-input').onchange=e=>{const file=e.target.files[0];e.target.value='';i
   try{
     await unpack(data.pages,added);if(data.webtoonOriginals)await unpack(data.webtoonOriginals,backup);
     assertNotAborted(signal);releaseProject();state.pages=added;state.webtoonOriginals=backup.length?backup:null;state.webtoonLayout=backup.length?data.webtoonLayout:null;
-    $('translation-context').value=typeof data.context==='string'?data.context.slice(0,5000):'';state.dirty=false;await activate(added[0].id);status(`Đã mở dự án ${added.length} trang, giữ nguyên ô thoại và bản dịch.${backup.length?` Có ${backup.length} ảnh gốc để khôi phục trước khi ghép.`:''}`);
+    $('translation-context').value=typeof data.context==='string'?data.context.slice(0,5000):'';markDirty();state.dirty=false;await activate(added[0].id);status(`Đã mở dự án ${added.length} trang, giữ nguyên ô thoại và bản dịch.${backup.length?` Có ${backup.length} ảnh gốc để khôi phục trước khi ghép.`:''}`);
   }catch(error){releasePages([...added,...backup]);throw error;}
 });};
 $('translation-context').oninput=markDirty;

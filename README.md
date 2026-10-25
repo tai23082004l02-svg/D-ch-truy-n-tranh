@@ -82,3 +82,5 @@ Build còn tạo `extension/collector.js` và `downloads/comix-capture-extension
 Shokugeki no Souma — trang tiếng Việt đã biên tập trước đó:
 
 ![Trang 1 tiếng Việt](translations/shokugeki-no-souma/trang-001.vi.png)
+
+Hoàn tác: dùng nút **↶ Hoàn tác** hoặc **Ctrl+Z** (Mac: **⌘Z**), tối đa 30 bước trong phiên hiện tại. Hỗ trợ ô thoại, nội dung, kiểu chữ, nền phục hồi, nhập/xóa trang và ghép ảnh. Trong cửa sổ phục hồi nền, phím tắt hoàn tác từng nét cọ/tạo/xóa mặt nạ riêng. Lịch sử không được lưu trong ZIP dự án; tải lại trang sẽ xóa lịch sử.

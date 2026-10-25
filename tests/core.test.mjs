@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { naturalCompare, validateBox, parseTranslations, fitText, paintBox, ocrBoxes } from '../src/core.js';
+import { naturalCompare, validateBox, parseTranslations, fitText, paintBox } from '../src/core.js';
 
 const box = {id:'a',x:10,y:10,w:200,h:100,fontSize:32,source:'Hello',translated:'Xin chào',background:'#ffffff',bold:true};
 const context = () => ({font:'',measureText(text){return {width:text.length*parseInt(this.font.match(/(\d+)px/)?.[1]||'20')*.55};}});
@@ -30,14 +30,4 @@ test('layout wraps an uninterrupted word and preserves explicit newlines',()=>{
 });
 test('untranslated regions preserve original pixels',()=>{
   let touched=false;assert.equal(paintBox({save(){touched=true;}},{...box,translated:'  '}),null);assert.equal(touched,false);
-});
-test('OCR filters weak text and clamps padding to image bounds',()=>{
-  const data={paragraphs:[{text:'HELLO',confidence:95,bbox:{x0:1,y0:1,x1:99,y1:50}},{text:'noise',confidence:10,bbox:{x0:1,y0:1,x1:10,y1:10}}]};
-  const boxes=ocrBoxes(data,100,100,()=> 'ocr-1');assert.equal(boxes.length,1);assert.equal(boxes[0].x,0);assert.equal(boxes[0].w,100);assert.equal(boxes[0].source,'HELLO');
-});
-test('OCR separates distant bubbles even if Tesseract merges their paragraph',()=>{
-  const line=(text,y0,y1)=>({text,confidence:90,bbox:{x0:20,y0,x1:160,y1}});
-  const data={paragraphs:[{lines:[line('HELLO',10,30),line('GRANDFATHER',40,60),line('PLEASE TRY IT',400,420)]}]};
-  const boxes=ocrBoxes(data,500,800,()=>crypto.randomUUID());
-  assert.equal(boxes.length,2);assert.equal(boxes[0].source,'HELLO\nGRANDFATHER');assert.ok(boxes[0].h<100);assert.ok(boxes[1].y>380);
 });

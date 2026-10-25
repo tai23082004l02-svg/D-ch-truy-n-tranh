@@ -77,28 +77,3 @@ export function parseTranslations(input, expectedIds) {
   if (!result.size) throw new Error('Không có bản dịch để nhập.');
   return result;
 }
-
-export function ocrBoxes(data, width, height, makeId = () => crypto.randomUUID()) {
-  // Tesseract can put distant speech bubbles in a single paragraph. Split by
-  // actual line geometry so the white mask does not wipe the artwork between them.
-  const groups = [];
-  for (const paragraph of data.paragraphs || []) {
-    const lines = (paragraph.lines?.length ? paragraph.lines : [paragraph]).filter(line => line.text?.trim() && line.confidence >= 30 && line.bbox.x1-line.bbox.x0>=4 && line.bbox.y1-line.bbox.y0>=4).sort((a,b)=>a.bbox.y0-b.bbox.y0 || a.bbox.x0-b.bbox.x0);
-    const local = [];
-    for (const line of lines) {
-      const b = line.bbox, lineHeight = b.y1-b.y0;
-      const target = [...local].reverse().find(group => {
-        const previous = group.last, gap = b.y0-previous.y1;
-        const overlap = Math.min(b.x1,previous.x1)-Math.max(b.x0,previous.x0);
-        return gap >= -Math.min(lineHeight,previous.y1-previous.y0)*.4 && gap <= Math.max(lineHeight,previous.y1-previous.y0)*1.2 && overlap > Math.min(b.x1-b.x0,previous.x1-previous.x0)*.15;
-      });
-      if (target) { target.text += '\n'+line.text.trim(); target.bbox = {x0:Math.min(target.bbox.x0,b.x0),y0:Math.min(target.bbox.y0,b.y0),x1:Math.max(target.bbox.x1,b.x1),y1:Math.max(target.bbox.y1,b.y1)}; target.last=b; }
-      else local.push({text:line.text.trim(),bbox:{...b},last:b,lineHeight});
-    }
-    groups.push(...local);
-  }
-  return groups.slice(0,LIMITS.boxes).map(group => {
-    const b=group.bbox, x=Math.max(0,b.x0-6), y=Math.max(0,b.y0-6);
-    return validateBox({id:makeId(),x,y,w:Math.min(width,b.x1+6)-x,h:Math.min(height,b.y1+6)-y,source:group.text,translated:'',fontSize:Math.max(16,Math.min(48,group.lineHeight)),background:'#ffffff',bold:true},width,height);
-  });
-}

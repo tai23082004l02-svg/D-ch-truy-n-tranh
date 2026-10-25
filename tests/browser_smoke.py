@@ -16,10 +16,10 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 36)
     image = Image.new('RGB', (900, 1000), 'white')
     draw = ImageDraw.Draw(image)
-    draw.ellipse((80, 60, 820, 410), outline='black', width=4)
-    draw.multiline_text((180, 180), 'HELLO GRANDFATHER\nTHIS IS MY BEST DISH', font=font, fill='black', spacing=20)
-    draw.rectangle((80, 470, 820, 940), outline='black', width=4)
-    draw.text((210, 650), 'PLEASE TRY IT', font=font, fill='black')
+    draw.ellipse((150, 70, 750, 330), outline='black', width=4)
+    draw.multiline_text((450, 200), 'HELLO GRANDFATHER\nTHIS IS MY BEST DISH', font=font, fill='black', spacing=20, anchor='mm', align='center')
+    draw.ellipse((240, 560, 660, 760), outline='black', width=4)
+    draw.text((450, 650), 'PLEASE TRY IT', font=font, fill='black', anchor='mm')
     for name in ['10.png', '2.png']:
         image.save(tmp / name)
     proxy_url = os.environ.get('HTTPS_PROXY') or os.environ.get('HTTP_PROXY')
@@ -91,6 +91,17 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     page.locator('#translated-text').fill('Một lời thoại quá dài. ' * 100)
     page.locator('#export-button').click()
     page.wait_for_function("document.querySelector('#status').textContent.includes('bị tràn chữ')")
+    # Redrawing a bad region must preserve the box identity/content, not append a duplicate.
+    box_count = page.locator('.bubble-item').count()
+    previous_translation = page.locator('#translated-text').input_value()
+    page.locator('#redraw-bubble').click()
+    page.wait_for_timeout(400)
+    page.evaluate("window.scrollTo(0,0);document.querySelector('#stage').scrollTop=0")
+    rectangle = page.locator('#editor').bounding_box()
+    x,y = rectangle['x']+rectangle['width']*.04,rectangle['y']+rectangle['height']*.04
+    page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+rectangle['width']*.06,y+rectangle['height']*.06);page.mouse.up()
+    assert page.locator('.bubble-item').count() == box_count
+    assert page.locator('#translated-text').input_value() == previous_translation
     page.locator('#delete-bubble').click()
     page.locator('.bubble-item').first.click()
     page.locator('#translated-text').fill('Cháu chào ông!')

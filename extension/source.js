@@ -1,31 +1,37 @@
 // This function is serialized by chrome.scripting. Keep it self-contained:
 // inspect the normal reader DOM only; no framework internals or chapter APIs.
 export async function inspectReader(options={}) {
-  const key=location.origin+location.pathname;
+  const naver=['comic.naver.com','m.comic.naver.com'].includes(location.hostname);
+  const keyOfLocation=()=>{const u=new URL(location.href);return u.origin+u.pathname+(naver?'?titleId='+u.searchParams.get('titleId')+'&no='+u.searchParams.get('no'):'');};
+  const key=keyOfLocation();
   if(options.sourceKey&&key!==options.sourceKey)return {error:'Tab nguồn đã đổi chương. Quét lại trước khi tiếp tục.'};
+  const nodes=()=>[...document.querySelectorAll(naver?'#comic_view_area img[id^="content_image_"], .wt_viewer img[id^="content_image_"], #sectionContWide img[id^="content_image_"]':'.rpage-page[data-page]')];
+  const number=node=>naver?Number(node.id.replace('content_image_',''))+1:Number(node.dataset.page);
+  const imageOf=node=>naver?node:node.querySelector('img.rpage-page__img');
   if(options.scrollToPage){
-    const node=[...document.querySelectorAll('.rpage-page[data-page]')].find(n=>Number(n.dataset.page)===options.scrollToPage);
-    if(!node)return {error:`Không tìm thấy trang ${options.scrollToPage}. Hãy dùng chế độ cuộn dọc.`};
+    const node=nodes().find(n=>number(n)===options.scrollToPage);
+    if(!node)return {error:`Không tìm thấy trang ${options.scrollToPage}. Hãy mở đúng tập và dùng chế độ cuộn dọc.`};
     node.scrollIntoView({behavior:'instant',block:'center'});
     for(let attempt=0;attempt<40;attempt++){
       await new Promise(resolve=>setTimeout(resolve,125));
-      if(location.origin+location.pathname!==key)return {error:'Tab nguồn đã đổi chương trong lúc tải.'};
-      const image=node.querySelector('img.rpage-page__img');
-      if(image?.complete&&image.naturalWidth>0)break;
+      if(keyOfLocation()!==key)return {error:'Tab nguồn đã đổi chương trong lúc tải.'};
+      const image=imageOf(node);if(image?.complete&&image.naturalWidth>0)break;
     }
   }
-  const rows=[...document.querySelectorAll('.rpage-page[data-page]')];
+  const rows=nodes();
   const pages=rows.map(node=>{
-    const img=node.querySelector('img.rpage-page__img');
-    const raw=img?.currentSrc||img?.getAttribute('src')||img?.getAttribute('data-src')||'';
+    const img=imageOf(node);
+    const raw=img?.getAttribute('data-original')||img?.getAttribute('data-src')||img?.currentSrc||img?.getAttribute('src')||'';
     let url='';try{const parsed=new URL(raw,location.href);if(raw&&parsed.protocol==='https:')url=parsed.href;}catch{}
-    return {page:Number(node.dataset.page),url,width:img?.naturalWidth||Number(img?.getAttribute('width'))||0,height:img?.naturalHeight||Number(img?.getAttribute('height'))||0,loaded:!!img?.complete&&img.naturalWidth>0};
+    return {page:number(node),url,width:img?.naturalWidth||Number(img?.getAttribute('width'))||0,height:img?.naturalHeight||Number(img?.getAttribute('height'))||0,loaded:!!img?.complete&&img.naturalWidth>0};
   }).filter(row=>Number.isInteger(row.page)&&row.page>0).sort((a,b)=>a.page-b.page);
-  return {title:document.title,url:location.href,sourceKey:key,pages,scrollY:window.scrollY,vertical:!!document.querySelector('.rpage.rpage--ttb'),expectedPages:document.querySelectorAll('.rpage-progress__seg').length||pages.length};
+  return {title:document.title,url:location.href,sourceKey:key,provider:naver?'naver':'comix',pages,scrollY:window.scrollY,vertical:naver||!!document.querySelector('.rpage.rpage--ttb'),expectedPages:naver?pages.length:document.querySelectorAll('.rpage-progress__seg').length||pages.length};
 }
 
 export function restoreScroll(y,sourceKey) {
-  if(location.origin+location.pathname===sourceKey)window.scrollTo({top:y,behavior:'instant'});
+  const u=new URL(location.href),naver=['comic.naver.com','m.comic.naver.com'].includes(u.hostname);
+  const key=u.origin+u.pathname+(naver?'?titleId='+u.searchParams.get('titleId')+'&no='+u.searchParams.get('no'):'');
+  if(key===sourceKey)window.scrollTo({top:y,behavior:'instant'});
 }
 
 export function safeFilename(value) {
@@ -34,8 +40,8 @@ export function safeFilename(value) {
 }
 
 export function validatePages(rows) {
-  if(!Array.isArray(rows)||!rows.length)throw new Error('Chưa thấy ảnh chương. Mở một chương đọc truyện, chuyển sang cuộn dọc rồi bấm biểu tượng tiện ích lại. Trang giới thiệu/bìa truyện chưa có ảnh chương.');
-  if(rows.length>100)throw new Error('Chương có hơn 100 trang; bản này hỗ trợ tối đa 100 ảnh để phù hợp xưởng dịch.');
+  if(!Array.isArray(rows)||!rows.length)throw new Error('Chưa thấy ảnh chương. Mở một chương Comix hoặc một tập Naver miễn phí, chuyển sang cuộn dọc rồi bấm biểu tượng tiện ích lại. Trang giới thiệu/bìa truyện chưa có ảnh chương.');
+  if(rows.length>1000)throw new Error('Chương vượt 1.000 ảnh. Bản này hỗ trợ tối đa 1.000 ảnh, chia ZIP theo từng phần.');
   const seen=new Set();
   for(const row of rows){
     if(!Number.isInteger(row.page)||row.page<1||seen.has(row.page))throw new Error('Số trang không hợp lệ hoặc trùng lặp.');seen.add(row.page);

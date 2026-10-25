@@ -7,8 +7,8 @@
   <meta name="description" content="Dịch truyện theo chương: OCR, chỉnh ô thoại và xuất ảnh tiếng Việt ngay trên trình duyệt.">
   <title>Xưởng dịch truyện</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=2-bubble-ocr">
-  <script defer src="./assets/app.js?v=2-bubble-ocr"></script>
+  <link rel="stylesheet" href="./style.css?v=3-naver">
+  <script defer src="./assets/app.js?v=3-naver"></script>
 </head>
 <body>
   <header class="topbar">
@@ -29,7 +29,7 @@
     <div class="workspace">
       <aside class="pages-panel"><div class="panel-heading"><h2>Trang truyện</h2><span id="chapter-size">0</span></div><div id="page-list" class="page-list"><p class="empty-small">Các trang sẽ được sắp theo tên tệp.</p></div><button id="clear-button" class="quiet danger" disabled>Xóa chương hiện tại</button></aside>
       <section class="stage-panel">
-        <div class="stage-heading"><div><strong id="active-name">Bàn biên tập</strong><small id="image-size">PNG, JPG, WEBP hoặc ZIP · tối đa 100 trang</small></div><label class="toggle"><input id="original-toggle" type="checkbox"> Xem ảnh gốc</label></div>
+        <div class="stage-heading"><div><strong id="active-name">Bàn biên tập</strong><small id="image-size">PNG, JPG, WEBP hoặc ZIP · tối đa 1.000 trang</small></div><label class="toggle"><input id="original-toggle" type="checkbox"> Xem ảnh gốc</label></div>
         <div id="stage" class="stage">
           <div id="empty-state" class="empty-state"><div class="empty-illustration"><span>あ</span><span>Chào!</span></div><h2>Câu chuyện bắt đầu ở đây</h2><p>Kéo thả ảnh hoặc ZIP vào đây.<br>Mỗi trang là một phần của chương, mọi chỉnh sửa ở cùng một chỗ.</p><button id="empty-import" class="primary">Chọn chương truyện</button><small>Ảnh gốc luôn được giữ để bạn có thể sửa lại.</small></div>
           <canvas id="editor" hidden aria-label="Trang truyện. Kéo chuột để tạo vùng thoại; chọn vùng để sửa." tabindex="0"></canvas>
@@ -37,7 +37,7 @@
         <div class="stage-footer"><span id="selection-hint">Kéo trên ảnh để tạo ô thoại · bấm vào ô để chỉnh</span><button id="delete-page" class="quiet danger" disabled>Xóa trang</button></div>
       </section>
       <aside class="controls-panel">
-        <section class="control-section"><p class="eyebrow">NHẬN DIỆN & DỊCH</p><h2>Làm theo cả chương</h2><label for="ocr-language">Ngôn ngữ ảnh gốc</label><select id="ocr-language"><option value="eng">Tiếng Anh</option><option value="jpn">Tiếng Nhật (chữ ngang)</option></select><button id="ocr-button" class="wide" disabled>OCR ô thoại cả chương</button><button id="ocr-page-button" class="wide" disabled>OCR lại trang này</button><button id="ocr-region-button" class="wide" disabled>Đọc ô đang chọn</button><p class="hint">Tách nền trắng của ô thoại rồi mới đọc chữ, tránh nhận nhầm nét vẽ. Trang có ô sẵn được bỏ qua khi chạy cả chương. Nếu kết quả sai: dùng OCR lại trang này, hoặc xóa ô sai, khoanh gọn vùng chữ và bấm Đọc ô đang chọn. Chữ đè tranh, tiêu đề và chữ dọc cần xử lý riêng.</p>
+        <section class="control-section"><p class="eyebrow">NHẬN DIỆN & DỊCH</p><h2>Làm theo cả chương</h2><label for="ocr-language">Ngôn ngữ ảnh gốc</label><select id="ocr-language"><option value="eng">Tiếng Anh</option><option value="kor">Tiếng Hàn</option><option value="jpn">Tiếng Nhật (chữ ngang)</option></select><button id="ocr-button" class="wide" disabled>OCR ô thoại cả chương</button><button id="ocr-page-button" class="wide" disabled>OCR lại trang này</button><button id="ocr-region-button" class="wide" disabled>Đọc ô đang chọn</button><p class="hint">Tách nền trắng của ô thoại rồi mới đọc chữ, tránh nhận nhầm nét vẽ. Trang có ô sẵn được bỏ qua khi chạy cả chương. Nếu kết quả sai: dùng OCR lại trang này, hoặc xóa ô sai, khoanh gọn vùng chữ và bấm Đọc ô đang chọn. Chữ đè tranh, tiêu đề và chữ dọc cần xử lý riêng.</p>
           <details id="api-settings"><summary>Dịch tự động bằng Gemini</summary><p class="hint">Chỉ lời thoại được gửi đến Google. Khóa API chỉ giữ trong bộ nhớ của tab, không lưu vào dự án hay GitHub. API có thể phát sinh phí.</p><label for="api-key">Gemini API key</label><input id="api-key" type="password" autocomplete="off" placeholder="Dán khóa của bạn" spellcheck="false"><label for="api-model">Mô hình</label><input id="api-model" value="gemini-2.5-flash" spellcheck="false"><label for="translation-context">Tên nhân vật & cách xưng hô</label><textarea id="translation-context" rows="3" placeholder="Ví dụ: Erina xưng cháu với ông; giữ nguyên tên món ăn Nhật."></textarea><button id="translate-button" class="primary wide" disabled>Dịch các ô còn trống</button></details>
           <details><summary>Dịch qua ChatGPT, không cần API</summary><p class="hint">Xuất lời thoại, gửi tệp cho ChatGPT theo hướng dẫn bên trong, rồi nhập JSON kết quả về đây.</p><button id="text-export" class="wide" disabled>Xuất lời thoại JSON</button><button id="text-import" class="wide" disabled>Nhập bản dịch JSON</button></details>
         </section>

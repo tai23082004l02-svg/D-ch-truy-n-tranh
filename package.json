@@ -10,10 +10,13 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "jszip": "3.10.1",
-    "tesseract.js": "5.1.1",
     "@tesseract.js-data/eng": "1.0.0",
-    "@tesseract.js-data/jpn": "1.0.0"
+    "@tesseract.js-data/jpn": "1.0.0",
+    "@tesseract.js-data/kor": "1.0.0",
+    "jszip": "3.10.1",
+    "tesseract.js": "5.1.1"
   },
-  "devDependencies": { "esbuild": "0.25.12" }
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
 }

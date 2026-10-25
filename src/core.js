@@ -1,4 +1,4 @@
-export const LIMITS = { pages: 100, fileBytes: 30 * 1024 ** 2, totalBytes: 250 * 1024 ** 2, pixels: 24_000_000, boxes: 1000 };
+export const LIMITS = { pages: 1000, fileBytes: 30 * 1024 ** 2, totalBytes: 250 * 1024 ** 2, pixels: 24_000_000, boxes: 1000 };
 
 export function naturalCompare(a, b) { return a.localeCompare(b, 'vi', { numeric: true, sensitivity: 'base' }); }
 

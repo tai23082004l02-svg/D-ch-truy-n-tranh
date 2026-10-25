@@ -11,7 +11,8 @@ test('capture filenames reject traversal, control characters and Windows device 
 test('reader pages retain numeric order, but reject duplicates, gaps and title pages',()=>{
   const row=page=>({page,url:`https://cdn.example.test/${page}.webp`});
   assert.deepEqual(validatePages([row(2),row(1)]).map(r=>r.page),[1,2]);
-  for(const data of [[],[row(2)],[row(1),row(3)],[row(1),row(1)],[{page:1,url:'javascript:alert(1)'}],[{page:1,url:'https://user:secret@example.test/a'}],Array.from({length:101},(_,i)=>row(i+1))])assert.throws(()=>validatePages(data));
+  assert.equal(validatePages(Array.from({length:1000},(_,i)=>row(i+1))).length,1000);
+  for(const data of [[],[row(2)],[row(1),row(3)],[row(1),row(1)],[{page:1,url:'javascript:alert(1)'}],[{page:1,url:'https://user:secret@example.test/a'}],Array.from({length:1001},(_,i)=>row(i+1))])assert.throws(()=>validatePages(data));
 });
 test('image responses use binary signatures, not URL extensions or content-type claims',()=>{
   assert.equal(imageExtension(new Uint8Array([137,80,78,71,13,10,26,10])),'png');

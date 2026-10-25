@@ -8,11 +8,11 @@ await copyFile('node_modules/tesseract.js/dist/worker.min.js', 'assets/ocr/worke
 for (const file of await readdir('node_modules/tesseract.js-core')) {
   if (/^tesseract-core.*\.(wasm|js)$/.test(file)) await copyFile(`node_modules/tesseract.js-core/${file}`, `assets/ocr/${file}`);
 }
-for (const lang of ['eng', 'jpn']) {
+for (const lang of ['eng', 'jpn', 'kor']) {
   await cp(`node_modules/@tesseract.js-data/${lang}/4.0.0_best_int/${lang}.traineddata.gz`, `assets/ocr/${lang}.traineddata.gz`);
 }
 const licenses = [];
-for (const name of ['tesseract.js', 'tesseract.js-core', 'jszip', '@tesseract.js-data/eng', '@tesseract.js-data/jpn']) {
+for (const name of ['tesseract.js', 'tesseract.js-core', 'jszip', '@tesseract.js-data/eng', '@tesseract.js-data/jpn', '@tesseract.js-data/kor']) {
   const files = await readdir(`node_modules/${name}`);
   for (const file of files.filter(x => /^licen[sc]e/i.test(x))) {
     const { readFile } = await import('node:fs/promises');
@@ -20,4 +20,4 @@ for (const name of ['tesseract.js', 'tesseract.js-core', 'jszip', '@tesseract.js
   }
 }
 await writeFile('assets/THIRD-PARTY-LICENSES.txt', licenses.join('\n'));
-console.log('Built static GitHub Pages site with local English/Japanese OCR models.');
+console.log('Built static GitHub Pages site with local English/Korean/Japanese OCR models.');

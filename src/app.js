@@ -74,7 +74,7 @@ async function activate(id) {
   const token = ++pageLoad;
   state.active = id; state.selected = null; state.image = null; state.redrawBoxId=null; renderPages(); renderFields();
   const page = current();
-  if (!page) { canvas.hidden = true; $('empty-state').hidden = false; $('active-name').textContent = 'Bàn biên tập'; $('image-size').textContent = 'PNG, JPG, WEBP hoặc ZIP · tối đa 100 trang'; return; }
+  if (!page) { canvas.hidden = true; $('empty-state').hidden = false; $('active-name').textContent = 'Bàn biên tập'; $('image-size').textContent = 'PNG, JPG, WEBP hoặc ZIP · tối đa 1.000 trang'; return; }
   $('empty-state').hidden = true; canvas.hidden = true;
   $('active-name').textContent = page.name; $('image-size').textContent = `${page.width} × ${page.height} px · ${page.boxes.length} ô thoại`;
   try {
@@ -156,7 +156,7 @@ $('redraw-bubble').onclick=()=>{if(state.busy||!selected())return;state.redrawBo
 function checkZip(zip) {
   const entries = Object.values(zip.files).filter(e=>!e.dir);
   const total = entries.reduce((n,e)=>n+(e._data?.uncompressedSize || 0),0);
-  if (entries.length > 1000 || total > LIMITS.totalBytes) throw new Error('ZIP quá lớn: tối đa 1.000 tệp và 250 MB dữ liệu giải nén.');
+  if (entries.length > 2100 || total > LIMITS.totalBytes) throw new Error('ZIP quá lớn: tối đa 2.100 tệp và 250 MB dữ liệu giải nén.');
 }
 async function importImages(files, signal) {
   const candidates = [];
@@ -172,7 +172,7 @@ async function importImages(files, signal) {
     } else if (/\.(png|jpe?g|webp)$/i.test(file.name)) candidates.push({name:file.name, blob:file});
   }
   if (!candidates.length) throw new Error('Không tìm thấy ảnh PNG, JPG hoặc WEBP.');
-  if (state.pages.length + candidates.length > LIMITS.pages) throw new Error('Mỗi chương tối đa 100 trang. Hãy chia chương thành các phần.');
+  if (state.pages.length + candidates.length > LIMITS.pages) throw new Error('Mỗi chương tối đa 1.000 trang. Hãy chia chương thành các phần.');
   candidates.sort((a,b)=>naturalCompare(a.name,b.name));
   const added = []; let bytes = state.pages.reduce((n,p)=>n+p.blob.size,0);
   try {

@@ -34,6 +34,35 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     page.locator('#image-input').set_input_files([str(tmp / '10.png'), str(tmp / '2.png')])
     page.wait_for_function("document.querySelector('#status').textContent.includes('Đã nhập 2 trang')")
     assert '2.png' in page.locator('.page-card').first.inner_text()
+    # The editor must accept >100 pages, including project save/reopen.
+    image.resize((90,100)).save(tmp/'tiny.png')
+    with zipfile.ZipFile(tmp/'bulk.zip','w') as bulk:
+        for i in range(1,131):bulk.write(tmp/'tiny.png',f'{i:03}.png')
+    page.locator('#clear-button').click()
+    page.locator('#image-input').set_input_files(str(tmp/'bulk.zip'))
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Đã nhập 130 trang')",timeout=30000)
+    assert page.locator('.page-card').count()==130
+    with page.expect_download() as bulk_project:page.locator('#save-button').click()
+    bulk_project.value.save_as(tmp/'bulk-project.zip')
+    page.locator('#clear-button').click()
+    page.locator('#project-input').set_input_files(str(tmp/'bulk-project.zip'))
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Đã mở dự án 130 trang')",timeout=30000)
+    assert page.locator('.page-card').count()==130
+    page.locator('#clear-button').click()
+    korean=Image.new('RGB',(800,1000),'white');kd=ImageDraw.Draw(korean)
+    kd.ellipse((150,80,650,330),outline='black',width=4)
+    kfont=ImageFont.truetype('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',40)
+    kd.multiline_text((400,205),'안녕하세요\n반갑습니다',font=kfont,fill='black',anchor='mm',align='center',spacing=15)
+    korean.save(tmp/'korean.png')
+    page.locator('#image-input').set_input_files(str(tmp/'korean.png'))
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Đã nhập 1 trang')")
+    page.locator('#ocr-language').select_option('kor');page.locator('#ocr-button').click()
+    page.wait_for_function("!document.body.classList.contains('busy')",timeout=120000)
+    korean_text=''.join(page.locator('.bubble-item').all_text_contents()).replace(' ','').replace('\n','')
+    assert '안녕하세요' in korean_text,korean_text
+    page.locator('#clear-button').click();page.locator('#ocr-language').select_option('eng')
+    page.locator('#image-input').set_input_files([str(tmp/'10.png'),str(tmp/'2.png')])
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Đã nhập 2 trang')")
     # Chapter ZIP uses the same batch flow, including nested folders and natural sorting.
     with zipfile.ZipFile(tmp / 'chapter.zip', 'w') as chapter:
         chapter.write(tmp / '10.png', 'chapter/10.png')

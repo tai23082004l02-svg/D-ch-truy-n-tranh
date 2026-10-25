@@ -26,6 +26,20 @@ Tối đa 1.000 ảnh, tự chia ZIP theo 100 ảnh hoặc 100 MB dữ liệu �
 
 Giới hạn: 1.000 trang/chương, 30 MB/ảnh, 24 triệu điểm ảnh/ảnh, tổng ảnh 250 MB. Trình duyệt có ít bộ nhớ nên chia chương thành các phần nhỏ hơn. ZIP có mật khẩu không được hỗ trợ.
 
+### Chữ trên nền tranh
+
+Với chữ không nằm trong ô trắng, OCR ô thoại tự động có thể bỏ sót. Nên OCR các ô trắng trước, sau đó kéo khung gọn quanh đoạn chữ trên tranh và chọn **Loại vùng chữ → Chữ trên nền tranh**.
+
+1. Bấm **Tạo mặt nạ & phục hồi nền**. Chọn tìm nét sáng/viền trắng hoặc nét tối, bấm **Tạo mặt nạ gợi ý**. Mặt nạ đỏ cần phủ cả nét chữ và viền, tránh dính nét vẽ.
+2. Dùng cọ **Tô vùng cần xóa** và **Gỡ vùng tô nhầm** để sửa. Có thể chỉnh ngưỡng sáng/nở mặt nạ rồi tạo lại gợi ý. Mặt nạ này là gợi ý theo độ sáng và thành phần liên thông, không tự hiểu chữ hay tách chữ chính xác trên mọi nền.
+3. Bấm **Xem nền phục hồi**, xem đối chiếu gốc + mặt nạ và nền mới. Chỉ khi ưng ý mới bấm **Áp dụng nền này**. Có nút dừng; đóng hộp xem trước không thay ảnh đang làm.
+4. Chọn **Nét chữ gốc để OCR** (đen hoặc sáng), bấm **Đọc ô đang chọn**. OCR dùng ảnh gốc và mặt nạ đã lưu, không đọc trên nền đã xóa chữ. Kiểm tra/sửa nội dung gốc rồi dịch bằng Gemini hoặc xuất/nhập JSON như thường lệ.
+5. Chỉnh màu chữ Việt, màu viền và độ dày viền. Chế độ này không tô cả ô bằng màu trắng. **Bỏ nền phục hồi** hoàn tác riêng phần nền; **Xem ảnh gốc** so sánh với nguồn ban đầu. **Lưu dự án** giữ ảnh gốc, nền sửa, mặt nạ và kiểu chữ; ZIP ảnh xuất ra có nền sửa và bản dịch.
+
+Phục hồi dùng **OpenCV Telea**, chạy trong Web Worker với bản OpenCV.js 4.12 được đóng gói tại `assets/inpaint/opencv.js`, chỉ tải khi xem nền phục hồi lần đầu. Không dùng mô hình AI hay gửi ảnh tới máy chủ khác. Thuật toán lan truyền màu từ vùng xung quanh nên hợp nền phẳng/gradient, có thể làm nhòe hoặc làm sai nét tranh phức tạp dưới chữ; không khôi phục được chi tiết thật đã bị chữ che. Chữ dọc, nghiêng và thư pháp vẫn có thể OCR sai; cần chỉnh tay, chưa có dàn chữ theo góc nghiêng.
+
+Mỗi vùng tối đa 2 triệu pixel; mặt nạ không vượt 65% vùng để giữ đủ nền tham chiếu. Chỉ pixel trong mặt nạ bị thay, ảnh nguồn không đổi. Thu nhỏ phạm vi nếu chạy chậm. Khi khoanh lại vùng của ô, nền phục hồi cũ sẽ bị bỏ để tránh lệch vị trí. Tổng dữ liệu ảnh và nền sửa vẫn giới hạn 250 MB. Kiểm thử thực tế: `python tests/art_browser.py` dùng OpenCV WASM thật, kiểm tra cọ/hoàn tác, hủy xử lý, OCR chữ viền, nền gradient, pixel ngoài mặt nạ, xuất PNG và mở lại dự án; không chứng minh chất lượng phục hồi cho mọi nền tranh.
+
 ### Ghép và chia lại webtoon
 
 Ảnh Naver thường là các lát liên tiếp của một dải cuộn, nên đường cắt tệp có thể nằm giữa ô thoại. Trong xưởng dịch, bấm **Ghép & chia lại webtoon**, giữ chiều cao mặc định 4.000 px và khoảng trống tối thiểu 40 px để thử trước. Công cụ nối theo thứ tự đang có, tìm dải nền trắng/đen đồng đều trên toàn chiều ngang để chia lại. Các ảnh phải cùng chiều rộng; không tự co giãn, bỏ lề hay xóa pixel. Nhập đủ các phần ZIP trước khi ghép để nối được cả ô thoại ở ranh giới giữa hai ZIP.
@@ -40,7 +54,7 @@ Kiểm thử: `python tests/webtoon_browser.py` kiểm tra pixel không mất/đ
 
 Ảnh, OCR, ghép chữ và đóng gói ZIP được xử lý trong trình duyệt. Bộ nhận diện tiếng Anh/Hàn/Nhật và WebAssembly nằm trong `assets/ocr`, không dùng dịch vụ OCR bên ngoài. Khi người dùng bấm dịch Gemini, lời thoại và ghi chú xưng hô được gửi trực tiếp đến Google qua HTTPS; khóa chỉ giữ trong bộ nhớ tab. Không dùng khóa dùng chung cho website công khai. Tiện ích trình duyệt hoặc mã chạy trên máy vẫn có thể truy cập khóa, nên dùng khóa cá nhân có hạn mức phù hợp.
 
-OCR ưu tiên lời thoại trong các vùng nền trắng khép kín. Ô mở, nền xám/đen, chữ nhỏ, chữ nối nét, chữ dọc, tiêu đề và chữ đè tranh có thể bị bỏ sót; các vùng thiếu tin cậy được báo là bỏ qua, không coi là đã nhận diện đầy đủ. Có thể khoanh và đọc riêng từng ô. Tesseract vẫn có thể đọc sai phông manga: cần duyệt nội dung trước khi dịch. Ứng dụng che chữ bằng nền màu phẳng trong vùng hình chữ nhật, chưa phục hồi nét vẽ dưới chữ. Không khẳng định OCR hay bản dịch tự động chính xác nếu chưa được duyệt.
+OCR ưu tiên lời thoại trong các vùng nền trắng khép kín. Ô mở, nền xám/đen, chữ nhỏ, chữ nối nét, chữ dọc, tiêu đề và chữ đè tranh có thể bị bỏ sót; các vùng thiếu tin cậy được báo là bỏ qua, không coi là đã nhận diện đầy đủ. Có thể khoanh và đọc riêng từng ô. Tesseract vẫn có thể đọc sai phông manga: cần duyệt nội dung trước khi dịch. Ô thoại dùng nền màu phẳng; chế độ Chữ trên nền tranh có mặt nạ và phục hồi cục bộ, nhưng không khôi phục chính xác chi tiết tranh đã bị che. Không khẳng định OCR hay bản dịch tự động chính xác nếu chưa được duyệt.
 
 ### GitHub Pages
 

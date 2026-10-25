@@ -1,0 +1,2 @@
+# Keep the trusted, minified third-party runtime byte-for-byte; avoid giant diffs.
+assets/inpaint/opencv.js -diff -whitespace

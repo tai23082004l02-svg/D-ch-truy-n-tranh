@@ -3,11 +3,14 @@ import { createWorker } from 'tesseract.js';
 import { LIMITS, naturalCompare, validateBox, paintBox, fitText, parseTranslations } from './core.js';
 import { findSpeechRegions, usableOCR, isolateCropInk } from './ocr-regions.js';
 import {reflowWebtoon} from './webtoon.js';
+import {createArtEditor,artOCRCanvas} from './art-editor.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('editor'), ctx = canvas.getContext('2d');
 const state = { pages: [], active: null, selected: null, image: null, busy: false, dirty: false, controller: null, drag: null, redrawBoxId:null,webtoonOriginals:null,webtoonLayout:null };
-function releaseProject(){for(const page of [...state.pages,...(state.webtoonOriginals||[])])URL.revokeObjectURL(page.url);}
+function releasePatch(box){const p=box.artPatch;if(p?.canvas){if(typeof p.canvas.close==='function')p.canvas.close();else p.canvas.width=1;}delete box.artPatch;}
+function releasePages(pages){for(const page of pages){URL.revokeObjectURL(page.url);for(const box of page.boxes)releasePatch(box);}}
+function releaseProject(){releasePages([...state.pages,...(state.webtoonOriginals||[])]);}
 let pageLoad = 0;
 const current = () => state.pages.find(p => p.id === state.active);
 const selected = () => current()?.boxes.find(b => b.id === state.selected);
@@ -108,12 +111,15 @@ function renderFields() {
   $('bubble-empty').hidden = !!box; $('bubble-heading').textContent = box ? `Ô thoại ${page.boxes.indexOf(box) + 1}` : 'Chọn một ô thoại';
   $('source-text').value = box?.source || ''; $('translated-text').value = box?.translated || '';
   $('font-size').value = box?.fontSize || 32; $('background-color').value = box?.background || '#ffffff'; $('bold-text').checked = box?.bold !== false;
+  $('box-mode').value=box?.mode||'bubble';$('art-style-fields').hidden=box?.mode!=='art';$('background-field').hidden=box?.mode==='art';
+  $('text-color').value=box?.textColor||'#ffffff';$('stroke-color').value=box?.strokeColor||'#111111';$('stroke-width').value=box?.strokeWidth??3;$('ocr-ink').value=box?.ocrInk||'dark';
+  $('art-undo').disabled=!box?.artPatch;$('art-patch-status').textContent=box?.artPatch?'Đã có nền phục hồi. Đọc ô đang chọn dùng mặt nạ đã lưu; ảnh nguồn vẫn giữ nguyên.':'Chưa phục hồi nền: chữ gốc vẫn còn. Tạo mặt nạ, xem trước và áp dụng rồi đọc chữ/dịch. Không che bằng mảng trắng ở chế độ này.';
   updateFitHint(); renderBubbleList(); updateButtons();
 }
 function updateFitHint() {
   const box = selected();
   const overflow = box?.translated.trim() && !fitText(ctx, box).fits;
-  $('fit-hint').textContent = overflow ? '⚠ Chữ chưa vừa ô dù đã thu nhỏ. Hãy rút gọn bản dịch hoặc xóa ô và vẽ vùng lớn hơn. Trang này sẽ chưa được xuất khi chữ còn tràn.' : 'Chữ tự thu nhỏ để vừa ô. Nền màu phẳng phù hợp ô thoại; vùng đè lên tranh cần xử lý riêng.';
+  $('fit-hint').textContent = overflow ? '⚠ Chữ chưa vừa ô dù đã thu nhỏ. Hãy rút gọn bản dịch hoặc xóa ô và vẽ vùng lớn hơn. Trang này sẽ chưa được xuất khi chữ còn tràn.' : box?.mode==='art'?'Chữ Việt có màu và viền, không tô nền phẳng. Xem ảnh gốc để so sánh nền trước/sau; nền nhiều chi tiết có thể bị nhòe.':'Chữ tự thu nhỏ để vừa ô. Nền màu phẳng phù hợp ô thoại; chọn Chữ trên nền tranh để dùng mặt nạ phục hồi.';
   $('fit-hint').style.color = overflow ? '#aa4932' : '';
 }
 function renderBubbleList() {
@@ -143,7 +149,7 @@ canvas.addEventListener('pointerup', e => {
   state.drag.end = coords(e); const r = dragRect(),boxId=state.drag.boxId; state.drag = null;
   if (r.w >= 12 && r.h >= 12 && current().boxes.length < LIMITS.boxes) {
     let box=boxId&&current().boxes.find(b=>b.id===boxId);
-    if(box){Object.assign(box,r);status('Đã khoanh lại ô thoại. Bấm Đọc ô đang chọn để nhận diện chữ trong vùng mới.');}
+    if(box){releasePatch(box);Object.assign(box,r);status('Đã khoanh lại ô thoại. Nền phục hồi cũ đã bỏ; hãy tạo lại nếu dùng Chữ trên nền tranh.');}
     else{box = validateBox({...r, fontSize:32}, current().width, current().height);current().boxes.push(box);}
     state.selected = box.id; markDirty(); renderPages();
   }
@@ -152,16 +158,25 @@ canvas.addEventListener('pointerup', e => {
 canvas.addEventListener('pointercancel', () => { state.drag = null; draw(); });
 $('original-toggle').onchange = draw;
 new ResizeObserver(() => draw()).observe($('stage'));
-for (const [id, field, read] of [['source-text','source',el=>el.value],['translated-text','translated',el=>el.value],['font-size','fontSize',el=>Math.max(8,Math.min(160,Number(el.value)||32))],['background-color','background',el=>el.value],['bold-text','bold',el=>el.checked]]) {
+for (const [id, field, read] of [['source-text','source',el=>el.value],['translated-text','translated',el=>el.value],['font-size','fontSize',el=>Math.max(8,Math.min(160,Number(el.value)||32))],['background-color','background',el=>el.value],['bold-text','bold',el=>el.checked],['text-color','textColor',el=>el.value],['stroke-color','strokeColor',el=>el.value],['stroke-width','strokeWidth',el=>Math.max(0,Math.min(10,Number(el.value)||0))],['ocr-ink','ocrInk',el=>el.value]]) {
   $(id).addEventListener('input', () => { if (state.busy || !selected()) return; selected()[field] = read($(id)); markDirty(); draw(); updateFitHint(); renderBubbleList(); renderPages(); });
 }
-$('delete-bubble').onclick = () => { if (state.busy || !selected()) return; current().boxes = current().boxes.filter(b=>b.id!==state.selected); state.selected=null; markDirty(); renderFields(); renderPages(); draw(); };
+$('delete-bubble').onclick = () => { if (state.busy || !selected()) return; releasePatch(selected());current().boxes = current().boxes.filter(b=>b.id!==state.selected); state.selected=null; markDirty(); renderFields(); renderPages(); draw(); };
+$('box-mode').onchange=()=>{if(state.busy||!selected())return;const box=selected();box.mode=$('box-mode').value;if(box.mode==='art'){box.textColor='#ffffff';box.strokeColor='#111111';box.strokeWidth=3;}else{box.textColor='#151515';box.strokeWidth=0;}markDirty();renderFields();draw();};
+const artEditor=createArtEditor({getBox:selected,getImage:()=>state.image,runTask:task,cancelTask:()=>state.controller?.abort(),onApply:async patch=>{
+  const total=[...state.pages,...(state.webtoonOriginals||[])].reduce((sum,p)=>sum+p.blob.size+p.boxes.reduce((n,b)=>n+(b.artPatch?.blob.size||0)+(b.artPatch?.maskBlob.size||0),0),0);
+  const old=selected().artPatch,delta=patch.blob.size+patch.maskBlob.size-(old?.blob.size||0)-(old?.maskBlob.size||0);
+  if(total+delta>LIMITS.totalBytes){patch.canvas.width=1;throw new Error('Ảnh và nền phục hồi vượt 250 MB. Hãy xử lý dự án nhỏ hơn.');}
+  releasePatch(selected());selected().artPatch=patch;markDirty();renderFields();draw();status('Đã áp dụng nền phục hồi. Bấm Đọc ô đang chọn, kiểm tra lời thoại rồi dịch và chỉnh màu/viền chữ Việt.');
+}});
+$('art-edit').onclick=()=>{if(state.busy||!selected())return;try{artEditor.open();}catch(error){status(error.message,true);}};
+$('art-undo').onclick=()=>{if(state.busy||!selected())return;releasePatch(selected());markDirty();renderFields();draw();status('Đã bỏ nền phục hồi, giữ nguyên ảnh nguồn và bản dịch.');};
 $('redraw-bubble').onclick=()=>{if(state.busy||!selected())return;state.redrawBoxId=selected().id;$('original-toggle').checked=false;status('Kéo một khung mới trên ảnh để thay vùng của ô đang chọn. Nội dung và bản dịch sẽ được giữ lại.');canvas.scrollIntoView({block:'center',behavior:'smooth'});draw();};
 
 function checkZip(zip) {
   const entries = Object.values(zip.files).filter(e=>!e.dir);
   const total = entries.reduce((n,e)=>n+(e._data?.uncompressedSize || 0),0);
-  if (entries.length > 2100 || total > LIMITS.totalBytes) throw new Error('ZIP quá lớn: tối đa 2.100 tệp và 250 MB dữ liệu giải nén.');
+  if (entries.length > 12000 || total > LIMITS.totalBytes) throw new Error('ZIP quá lớn: tối đa 12.000 tệp và 250 MB dữ liệu giải nén.');
 }
 async function importImages(files, signal) {
   if(state.webtoonOriginals)throw new Error('Khôi phục ảnh gốc trước khi nhập thêm ZIP, rồi ghép lại sau khi đã nhập đủ các phần.');
@@ -199,7 +214,7 @@ $('stage').addEventListener('dragleave',()=>$('stage').classList.remove('dragove
 $('stage').addEventListener('drop',e=>{e.preventDefault();$('stage').classList.remove('dragover');if(!state.busy) task('Đang nhập ảnh…',signal=>importImages([...e.dataTransfer.files],signal));});
 $('delete-page').onclick = () => {
   if(state.busy || !current() || !confirm('Xóa trang này và toàn bộ ô thoại trên trang?')) return;
-  const index=state.pages.indexOf(current()); URL.revokeObjectURL(current().url); state.pages.splice(index,1); markDirty(); activate(state.pages[Math.min(index,state.pages.length-1)]?.id);
+  const index=state.pages.indexOf(current()); releasePages([current()]); state.pages.splice(index,1); markDirty(); activate(state.pages[Math.min(index,state.pages.length-1)]?.id);
 };
 $('clear-button').onclick = () => { if(state.busy || !confirm('Xóa chương hiện tại và bản ảnh gốc dự phòng? Hãy lưu dự án trước nếu bạn muốn mở lại.')) return; releaseProject();state.pages=[];state.webtoonOriginals=null;state.webtoonLayout=null;state.dirty=false; activate(null);status('Đã xóa chương. Bạn có thể nhập chương mới.'); };
 
@@ -215,7 +230,7 @@ $('webtoon-start').onclick=()=>{
     status(`Đã ghép ${state.webtoonOriginals.length} ảnh và chia thành ${state.pages.length} đoạn. ${result.forcedCount?`${result.forcedCount} điểm chưa có khoảng trống an toàn: giữ phần chồng lặp để bạn kiểm tra, các đoạn có tên “can-kiem-tra”.`:'Các điểm chia mới nằm trong dải nền trắng/đen đồng đều.'} Ảnh gốc và OCR cũ được giữ để khôi phục. Hãy xem lại trước khi OCR.`);
   });
 };
-$('webtoon-revert').onclick=()=>{if(state.busy||!state.webtoonOriginals)return;if(!confirm('Trở về ảnh gốc và OCR/bản dịch cũ? Chỉnh sửa trên bộ ảnh đã ghép sẽ bị bỏ; hãy Lưu dự án nếu cần giữ.'))return;state.pages.forEach(p=>URL.revokeObjectURL(p.url));state.pages=state.webtoonOriginals;state.webtoonOriginals=null;state.webtoonLayout=null;markDirty();activate(state.pages[0]?.id);status('Đã khôi phục ảnh gốc và các ô thoại trước khi ghép.');};
+$('webtoon-revert').onclick=()=>{if(state.busy||!state.webtoonOriginals)return;if(!confirm('Trở về ảnh gốc và OCR/bản dịch cũ? Chỉnh sửa trên bộ ảnh đã ghép sẽ bị bỏ; hãy Lưu dự án nếu cần giữ.'))return;releasePages(state.pages);state.pages=state.webtoonOriginals;state.webtoonOriginals=null;state.webtoonLayout=null;markDirty();activate(state.pages[0]?.id);status('Đã khôi phục ảnh gốc và các ô thoại trước khi ghép.');};
 $('webtoon-export').onclick=()=>task('Đang xuất bộ ảnh đã ghép…',async signal=>{const zip=new JSZip();for(const p of state.pages)zip.file(p.name,p.blob);zip.file('webtoon-layout.json',JSON.stringify(state.webtoonLayout,null,2));const blob=await zip.generateAsync({type:'blob',compression:'STORE'},m=>progress('Đang đóng gói bộ ảnh…',m.percent));assertNotAborted(signal);download(blob,'webtoon-da-ghep.zip');status('Đã xuất ảnh PNG đã ghép/chia, chưa chèn bản dịch, kèm tọa độ nguồn trong webtoon-layout.json.');});
 
 function maskedInput(region,zoom=2) {
@@ -253,7 +268,9 @@ async function runOCR(signal,scope='missing') {
       const scanContext=scan.getContext('2d',{willReadFrequently:true});scanContext.fillStyle='#fff';scanContext.fillRect(0,0,scan.width,scan.height);scanContext.drawImage(original,0,0,scan.width,scan.height);
       const sx=page.width/scan.width,sy=page.height/scan.height;
       let regions;
-      if(cropBox){
+      if(cropBox?.mode==='art'){
+        regions=[{input:artOCRCanvas(original,cropBox)}];
+      }else if(cropBox){
         const crop=document.createElement('canvas'),scale=Math.min(2,1800/Math.max(cropBox.w,cropBox.h));crop.width=Math.max(1,Math.round(cropBox.w*scale));crop.height=Math.max(1,Math.round(cropBox.h*scale));
         const c=crop.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,crop.width,crop.height);c.drawImage(original,cropBox.x,cropBox.y,cropBox.w,cropBox.h,0,0,crop.width,crop.height);
         const cleaned=isolateCropInk(c.getImageData(0,0,crop.width,crop.height));crop.width=1;crop.height=1;regions=[{input:maskedInput(cleaned,1)}];
@@ -270,7 +287,7 @@ async function runOCR(signal,scope='missing') {
         else boxes.push(validateBox({x:region.x*sx,y:region.y*sy,w:region.w*sx,h:region.h*sy,source,fontSize:Math.round(Math.min(48,Math.max(16,region.fontSize*sy)))},page.width,page.height));
         await tick();
       }
-      if(!cropBox){if(boxes.length){page.boxes=boxes;found+=boxes.length;markDirty();}else emptyPages++;}
+      if(!cropBox){if(boxes.length){for(const box of page.boxes)releasePatch(box);page.boxes=boxes;found+=boxes.length;markDirty();}else emptyPages++;}
       scan.width=1;scan.height=1;
       renderPages(); if(page.id===state.active){renderFields();draw();} await tick();
     }
@@ -325,10 +342,22 @@ $('translation-input').onchange = e => { const file=e.target.files[0];e.target.v
 
 $('save-button').onclick = () => task('Đang lưu dự án…',async signal=>{
   const zip=new JSZip();
-  const pack=(items,folder)=>items.map((page,i)=>{assertNotAborted(signal);const path=`${folder}/${String(i+1).padStart(4,'0')}.image`;zip.file(path,page.blob);return {id:page.id,name:page.name,path,boxes:page.boxes};});
+  const pack=(items,folder)=>items.map((page,i)=>{
+    assertNotAborted(signal);const path=`${folder}/${String(i+1).padStart(4,'0')}.image`;zip.file(path,page.blob);
+    const boxes=page.boxes.map((box,j)=>{
+      const {artPatch,...fields}=box;
+      if(!artPatch)return fields;
+      const patchPath=`${folder}-patches/${i}-${j}.png`,maskPath=`${folder}-patches/${i}-${j}-mask.png`;
+      zip.file(patchPath,artPatch.blob);zip.file(maskPath,artPatch.maskBlob);
+      return {...fields,artPatch:{path:patchPath,maskPath,x:artPatch.x,y:artPatch.y,w:artPatch.w,h:artPatch.h}};
+    });
+    return {id:page.id,name:page.name,path,boxes};
+  });
   const pages=pack(state.pages,'originals');
   const webtoonOriginals=state.webtoonOriginals?pack(state.webtoonOriginals,'webtoon-originals'):null;
-  zip.file('project.json',JSON.stringify({version:1,context:$('translation-context').value,pages,webtoonOriginals,webtoonLayout:state.webtoonLayout}));
+  const metadata=JSON.stringify({version:1,context:$('translation-context').value,pages,webtoonOriginals,webtoonLayout:state.webtoonLayout});
+  if(metadata.length>10*1024**2||Object.values(zip.files).filter(f=>!f.dir).length>=12000)throw new Error('Thông tin dự án quá lớn; hãy chia dự án thành phần nhỏ hơn.');
+  zip.file('project.json',metadata);
   const blob=await zip.generateAsync({type:'blob',compression:'STORE'},meta=>progress('Đang đóng gói dự án…',meta.percent));assertNotAborted(signal);
   download(blob,'du-an-dich-truyen.zip');state.dirty=false;status('Đã tạo ZIP dự án gồm ảnh gốc, vùng thoại và bản dịch. Khóa API không được lưu. Hãy kiểm tra tệp tải xuống trước khi đóng tab.');
 });
@@ -348,14 +377,33 @@ $('project-input').onchange=e=>{const file=e.target.files[0];e.target.value='';i
       if(typeof page.id!=='string'||!/^[\w-]{1,80}$/.test(page.id)||ids.has(page.id)||typeof page.name!=='string'||!Array.isArray(page.boxes)||page.boxes.length>LIMITS.boxes)throw new Error('Dữ liệu trang không hợp lệ.');ids.add(page.id);
       const entry=typeof page.path==='string'&&zip.file(page.path);if(!entry)throw new Error('Dự án thiếu ảnh gốc.');const blob=await entry.async('blob'),info=await inspectImage(blob,page.name);
       const boxes=page.boxes.map(b=>validateBox(b,info.width,info.height));for(const b of boxes){if(boxIds.has(b.id))throw new Error('ID ô thoại bị trùng trong dự án.');boxIds.add(b.id);}
-      target.push({id:page.id,name:page.name.slice(0,250),blob,url:URL.createObjectURL(blob),...info,boxes});await tick();
+      target.push({id:page.id,name:page.name.slice(0,250),blob,url:URL.createObjectURL(blob),...info,boxes});
+      for(const [j,raw]of page.boxes.entries())if(raw.artPatch){
+        const patch=raw.artPatch;
+        if(!['x','y','w','h'].every(k=>Number.isInteger(patch[k]))||patch.x<0||patch.y<0||patch.w<1||patch.h<1||patch.x+patch.w>info.width||patch.y+patch.h>info.height||patch.w*patch.h>2_000_000)throw new Error('Tọa độ nền phục hồi không hợp lệ.');
+        const entry=typeof patch.path==='string'&&zip.file(patch.path),maskEntry=typeof patch.maskPath==='string'&&zip.file(patch.maskPath);
+        if(!entry||!maskEntry)throw new Error('Dự án thiếu nền phục hồi hoặc mặt nạ.');
+        const patchBlob=await entry.async('blob'),maskBlob=await maskEntry.async('blob');
+        if(patchBlob.size>LIMITS.fileBytes||maskBlob.size>LIMITS.fileBytes)throw new Error('Tệp nền phục hồi quá lớn.');
+        const bitmap=await createImageBitmap(patchBlob);
+        try{
+          if(bitmap.width!==patch.w||bitmap.height!==patch.h)throw new Error('Kích thước nền phục hồi không khớp.');
+          const maskBitmap=await createImageBitmap(maskBlob);
+          try{
+            if(maskBitmap.width!==patch.w||maskBitmap.height!==patch.h)throw new Error('Kích thước mặt nạ không khớp.');
+            const layer=document.createElement('canvas');layer.width=patch.w;layer.height=patch.h;const c=layer.getContext('2d');c.drawImage(maskBitmap,0,0);const data=c.getImageData(0,0,patch.w,patch.h).data,mask=new Uint8Array(patch.w*patch.h);for(let k=0;k<mask.length;k++)mask[k]=data[k*4]>=128?255:0;layer.width=1;
+            boxes[j].artPatch={x:patch.x,y:patch.y,w:patch.w,h:patch.h,canvas:bitmap,blob:patchBlob,maskBlob,mask};
+          }finally{maskBitmap.close();}
+        }catch(error){bitmap.close();throw error;}
+      }
+      await tick();
     }
   };
   try{
     await unpack(data.pages,added);if(data.webtoonOriginals)await unpack(data.webtoonOriginals,backup);
     assertNotAborted(signal);releaseProject();state.pages=added;state.webtoonOriginals=backup.length?backup:null;state.webtoonLayout=backup.length?data.webtoonLayout:null;
     $('translation-context').value=typeof data.context==='string'?data.context.slice(0,5000):'';state.dirty=false;await activate(added[0].id);status(`Đã mở dự án ${added.length} trang, giữ nguyên ô thoại và bản dịch.${backup.length?` Có ${backup.length} ảnh gốc để khôi phục trước khi ghép.`:''}`);
-  }catch(error){[...added,...backup].forEach(p=>URL.revokeObjectURL(p.url));throw error;}
+  }catch(error){releasePages([...added,...backup]);throw error;}
 });};
 $('translation-context').oninput=markDirty;
 
@@ -365,8 +413,10 @@ $('export-button').onclick=()=>task('Đang kiểm tra chương…',async signal=
     if(!box.translated.trim()){untranslated++;continue;}
     if(!fitText(ctx,box).fits){await activate(page.id);state.selected=box.id;renderFields();draw();throw new Error(`Trang ${i+1} có ô thoại bị tràn chữ. Hãy rút gọn hoặc vẽ lại ô lớn hơn rồi xuất lại.`);}
   }
+  const uncleared=pages.reduce((n,p)=>n+p.boxes.filter(b=>b.mode==='art'&&b.translated.trim()&&!b.artPatch).length,0);
+  if(uncleared&&!confirm(`Có ${uncleared} vùng chữ trên nền tranh chưa phục hồi nền. Chữ gốc có thể còn chồng với bản dịch. Vẫn xuất ảnh?`))return;
   const noBoxes=pages.filter(p=>!p.boxes.length).length;
-  if((untranslated||noBoxes)&&!confirm(`Còn ${untranslated} ô chưa dịch và ${noBoxes} trang chưa có ô thoại. Các phần này giữ nguyên ảnh gốc. Vẫn xuất chương?`))return;
+  if((untranslated||noBoxes)&&!confirm(`Còn ${untranslated} ô chưa dịch và ${noBoxes} trang chưa có ô thoại. Các ô chưa dịch sẽ chưa có chữ Việt; nền phục hồi đã áp dụng vẫn được giữ. Vẫn xuất chương?`))return;
   const zip=new JSZip();const output=document.createElement('canvas'),out=output.getContext('2d');
   try{
     for(const [i,page]of pages.entries()){

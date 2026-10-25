@@ -1,6 +1,9 @@
 import { build } from 'esbuild';
 import { cp, mkdir, readdir, copyFile, writeFile, readFile } from 'node:fs/promises';
 await mkdir('assets/ocr', { recursive: true });
+await mkdir('assets/inpaint', { recursive: true });
+await copyFile('node_modules/@techstark/opencv-js/dist/opencv.js','assets/inpaint/opencv.js');
+await build({entryPoints:['src/inpaint-worker.js'],bundle:true,minify:true,outfile:'assets/inpaint-worker.js',target:['es2022']});
 await build({ entryPoints: ['src/app.js'], bundle: true, minify: true, sourcemap: false, outfile: 'assets/app.js', target: ['es2022'], legalComments: 'eof' });
 const bundle = await readFile('assets/app.js', 'utf8');
 await writeFile('assets/app.js', bundle.replace(/\/\*![\s\S]*?\*\//g, comment => comment.replace(/[\t ]+$/gm, '')));
@@ -12,7 +15,7 @@ for (const lang of ['eng', 'jpn', 'kor']) {
   await cp(`node_modules/@tesseract.js-data/${lang}/4.0.0_best_int/${lang}.traineddata.gz`, `assets/ocr/${lang}.traineddata.gz`);
 }
 const licenses = [];
-for (const name of ['tesseract.js', 'tesseract.js-core', 'jszip', '@tesseract.js-data/eng', '@tesseract.js-data/jpn', '@tesseract.js-data/kor']) {
+for (const name of ['tesseract.js', 'tesseract.js-core', 'jszip', '@tesseract.js-data/eng', '@tesseract.js-data/jpn', '@tesseract.js-data/kor', '@techstark/opencv-js']) {
   const files = await readdir(`node_modules/${name}`);
   for (const file of files.filter(x => /^licen[sc]e/i.test(x))) {
     const { readFile } = await import('node:fs/promises');

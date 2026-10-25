@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Xưởng dịch — Lấy ảnh chương Comix",
+  "version": "1.0.0",
+  "description": "Lấy ảnh từ chương Comix đang mở, kiểm tra thứ tự và xuất ZIP để OCR/dịch. Không gọi API chương hoặc đọc cookie.",
+  "permissions": ["activeTab", "scripting", "downloads"],
+  "optional_host_permissions": ["https://*/*"],
+  "action": { "default_title": "Lấy ảnh chương đang mở" },
+  "background": { "service_worker": "background.js" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src https:; img-src https: data: blob:; style-src 'self'" }
+}

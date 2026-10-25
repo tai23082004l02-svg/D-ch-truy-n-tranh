@@ -1,0 +1,13 @@
+import {build} from 'esbuild';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import JSZip from 'jszip';
+await build({entryPoints:['extension/collector-src.js'],bundle:true,minify:true,outfile:'extension/collector.js',target:['chrome120'],legalComments:'eof'});
+const bundle=await readFile('extension/collector.js','utf8');
+await writeFile('extension/collector.js',bundle.replace(/\/\*![\s\S]*?\*\//g,comment=>comment.replace(/[\t ]+$/gm,'')));
+const zip=new JSZip();
+const metadata={date:new Date('2026-10-25T00:00:00Z')};
+for(const name of ['manifest.json','background.js','collector.html','collector.css','collector.js','README.md'])zip.file(name,await readFile('extension/'+name),metadata);
+zip.file('THIRD-PARTY-LICENSES.txt',await readFile('assets/THIRD-PARTY-LICENSES.txt'),metadata);
+await mkdir('downloads',{recursive:true});
+await writeFile('downloads/comix-capture-extension.zip',await zip.generateAsync({type:'nodebuffer',compression:'DEFLATE',compressionOptions:{level:6}}));
+console.log('Built extension and downloads/comix-capture-extension.zip');

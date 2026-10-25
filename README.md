@@ -4,6 +4,12 @@
 
 Công cụ web tĩnh để biên tập bản dịch theo chương, chạy trên GitHub Pages. Không cần backend, không có khóa API trong mã nguồn.
 
+### Lấy ảnh chương từ Comix
+
+Mở [trang cài tiện ích](https://tai23082004l02-svg.github.io/D-ch-truy-n-tranh/capture.html), tải ZIP và cài Load unpacked trên Chrome/Edge máy tính. Vào một chương Comix, chọn đọc cuộn dọc rồi bấm biểu tượng tiện ích. Công cụ đọc các ảnh trong trang bạn đang mở, có bước cuộn tải lazy-load, xem trước và tải ZIP theo thứ tự để nhập vào xưởng dịch. Không gọi API chương hoặc tự chuyển sang chương khác. Ảnh lấy về giữ nguyên ngôn ngữ đang có trên trang, không tự tìm bản tiếng Hàn.
+
+Đây là bản thử nghiệm: đã kiểm tra bộ chọn DOM trong mã trình đọc công khai, nhưng chưa xác minh tải trọn chương thực tế từ phiên Comix của người dùng. API danh sách chương trả 403 trong môi trường phát triển. Tiện ích không vượt từ chối truy cập; xem [hướng dẫn và phạm vi quyền](extension/README.md). Không tự đăng ảnh tải về lên GitHub.
+
 ### Sử dụng
 
 1. Nhập nhiều ảnh PNG/JPG/WEBP hoặc một ZIP. Trang được sắp theo tên tệp (1, 2, …, 10).
@@ -41,6 +47,8 @@ npm run dev
 ```
 
 `npm run build` tạo `assets/app.js`, sao chép worker, WebAssembly và mô hình OCR từ các gói đã khóa phiên bản. Sau khi sửa `src/`, hãy build và commit lại `assets/` cùng mã nguồn. Kiểm thử trình duyệt: `python tests/browser_smoke.py` và `python tests/manga_ocr.py` (cần Python Playwright, Pillow và Chromium; máy chủ ở cổng 5173). Kiểm thử manga dùng nền truyện mẫu trong kho với lời thoại tiếng Anh được đặt lại để có đáp án kiểm chứng, cùng bản JPEG thu nhỏ; đây không phải bản scan tiếng Anh gốc của người dùng và không chứng minh độ chính xác với mọi phông chữ. Có thể đặt `TEST_BASE_URL` để kiểm thử đường dẫn con của GitHub Pages.
+
+Build còn tạo `extension/collector.js` và `downloads/comix-capture-extension.zip`. Sau khi sửa tiện ích, commit cả nguồn, bundle và ZIP; riêng tiện ích có thể build bằng `npm run build:extension`. Kiểm thử tiện ích: `CAPTURE_CHROMIUM=/duong-dan/chrome-for-testing python tests/capture_browser.py` (trình đọc/CDN mô phỏng, không phải lượt tải chương thật). Cần bản Chromium/Chrome for Testing hỗ trợ nạp tiện ích unpacked; Chromium hệ thống trong môi trường này không nạp được, nên đã kiểm thử bằng Chrome for Testing do Playwright cài. Bản manifest tạm trong kiểm thử cấp trước quyền cho hai máy chủ giả lập; không thay quyền trong gói cài thực tế.
 
 ### Bản dịch mẫu
 

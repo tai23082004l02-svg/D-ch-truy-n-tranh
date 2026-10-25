@@ -22,7 +22,9 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     draw.text((210, 650), 'PLEASE TRY IT', font=font, fill='black')
     for name in ['10.png', '2.png']:
         image.save(tmp / name)
-    browser = p.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox'])
+    proxy_url = os.environ.get('HTTPS_PROXY') or os.environ.get('HTTP_PROXY')
+    proxy = {'server': proxy_url, 'bypass': 'localhost,127.0.0.1'} if proxy_url else None
+    browser = p.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox'], proxy=proxy)
     page = browser.new_page(viewport={'width': 1440, 'height': 1080}, accept_downloads=True)
     errors = []
     page.on('pageerror', lambda error: errors.append(str(error)))
@@ -30,6 +32,15 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     page.goto(BASE)
     page.screenshot(path=str(tmp / 'empty-desktop.png'), full_page=True)
     page.locator('#image-input').set_input_files([str(tmp / '10.png'), str(tmp / '2.png')])
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Đã nhập 2 trang')")
+    assert '2.png' in page.locator('.page-card').first.inner_text()
+    # Chapter ZIP uses the same batch flow, including nested folders and natural sorting.
+    with zipfile.ZipFile(tmp / 'chapter.zip', 'w') as chapter:
+        chapter.write(tmp / '10.png', 'chapter/10.png')
+        chapter.write(tmp / '2.png', 'chapter/2.png')
+        chapter.writestr('notes.txt', 'not an image')
+    page.locator('#clear-button').click()
+    page.locator('#image-input').set_input_files(str(tmp / 'chapter.zip'))
     page.wait_for_function("document.querySelector('#status').textContent.includes('Đã nhập 2 trang')")
     assert '2.png' in page.locator('.page-card').first.inner_text()
     # Stopping OCR must unlock the editor even while the worker is still starting.
@@ -108,7 +119,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         exported = Image.open(io.BytesIO(output.read('001-vi.png'))).convert('RGB')
         assert exported.size == image.size
         assert ImageChops.difference(image, exported).getbbox() is not None
-        assert not any(g > r + 20 and g > b + 10 for r, g, b in exported.getdata()), 'Editor selection marks leaked into exported PNG'
+        assert exported.getchannel('R').tobytes() == exported.getchannel('G').tobytes() == exported.getchannel('B').tobytes(), 'Editor selection marks leaked into exported PNG'
         outside = ImageChops.difference(image, exported)
         d = ImageDraw.Draw(outside)
         for box in meta['pages'][0]['boxes']:

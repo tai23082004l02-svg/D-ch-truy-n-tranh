@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Xưởng dịch — Lấy ảnh truyện",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Lấy ảnh từ chương đang mở trên Comix, Naver hoặc HentaiRead (thử nghiệm), kiểm tra thứ tự và xuất ZIP để OCR/dịch. Không gọi API chương hoặc đọc cookie.",
   "permissions": ["activeTab", "scripting", "downloads", "declarativeNetRequestWithHostAccess"],
   "optional_host_permissions": ["https://*/*"],

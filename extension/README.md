@@ -1,4 +1,4 @@
-# Lấy ảnh Comix, Naver & HentaiRead — v1.3.0
+# Lấy ảnh Comix, Naver & HentaiRead — v1.4.0
 
 ## Cài hoặc cập nhật
 
@@ -43,9 +43,23 @@ Dùng trên Chrome/Edge máy tính. Chưa phát hành Chrome Web Store; Chrome/S
 
 - Ưu tiên các vùng cụ thể như `.reading-content img.wp-manga-chapter-img`, `.reading-content .page-break img`, `#readerarea img`, `#chapter-content img`; sau đó thử một số container đọc khác. Đây là giả định cấu trúc phổ biến, không phải kết quả xác minh engine của website bị chặn.
 - Lấy URL từ `data-lazy-src`, `data-cfsrc`, `data-original`, `data-src`, `data-url`, rồi mới dùng `currentSrc/src`; chỉ URL HTTPS. Đánh số theo thứ tự ảnh trong DOM của vùng đọc, không tự suy diễn trang thiếu hoặc mở các trang/chương tiếp theo.
-- Số ảnh hiển thị là các phần tử ảnh đang có, chưa xác định được tổng trang của chương. Nếu đang đọc từng ảnh hoặc danh sách chưa tải hết, chuyển sang liệt kê/cuộn rồi quét lại. Ảnh trong canvas hoặc chỉ có blob URL chưa được hỗ trợ.
+- Số ảnh hiển thị là các phần tử ảnh đang có, chưa xác định được tổng trang của chương. Nếu đang đọc từng ảnh hoặc danh sách chưa tải hết, chuyển sang liệt kê/cuộn rồi quét lại. Ảnh blob trong trình đọc `reading-image[data-page]` được hỗ trợ như phần bên dưới; canvas không có phần tử ảnh vẫn chưa được hỗ trợ.
 - Nếu chưa thấy ảnh, mở tùy chọn HentaiRead và nhập **CSS vùng ảnh** thực tế, bấm Quét lại. Bộ chọn được giới hạn 300 ký tự, chỉ đọc phần tử IMG, không chạy JavaScript. Không dùng `img` cho toàn trang; kiểm tra danh sách xem trước để tránh bìa/banner. Cú pháp sai được báo và không tự thay bằng quét toàn bộ trang.
 - Ô **Gửi nguồn trang đọc** mặc định tắt. Khi bật và bấm tải, tiện ích đặt Referer bằng origin trang nguồn cho GET ảnh từ chính tiện ích đến đúng các máy chủ ảnh đã chọn/cấp quyền; quy tắc tạm được gỡ khi thao tác xong hoặc tab đóng. Đây là thông tin nguồn như yêu cầu ảnh bình thường, không kèm cookie/token. Nếu server vẫn từ chối, công cụ báo lỗi, không thử thông tin xác thực khác.
+
+## Trình đọc blob và chế độ từng trang
+
+HTML do người dùng cung cấp cho thấy ảnh có lớp `reading-image`, `data-page="3"`, và `src="blob:https://hentairead.com/..."`; URL trang có dạng `/hentai/<tên>/<ngôn-ngữ>/p/3/`, thanh điều hướng hiển thị `3/35`. Bộ nhận diện mới ưu tiên cấu trúc thực tế này thay cho phỏng đoán các container phổ biến.
+
+- Blob URL là địa chỉ tạm trong phiên trang, không phải URL CDN. Tiện ích dùng script trong tab nguồn để đọc Blob, chuyển dữ liệu ảnh về tab công cụ, xác minh định dạng PNG/JPG/WEBP rồi đóng ZIP. Không đọc cookie/token và không cần quyền host CDN cho nhánh này.
+- Nếu Blob URL đã bị thu hồi nhưng ảnh còn hiển thị, thử xuất lại ảnh đang hiển thị bằng canvas PNG (tối đa 24 triệu pixel). Giao diện ghi rõ các ảnh được xuất lại PNG: giữ kích thước/ảnh hiển thị, không giữ định dạng nén hoặc byte của tệp ban đầu. Không thay đổi quy tắc bảo mật canvas/CORS khi trình duyệt từ chối đọc.
+- Khi tổng trang xác định được duy nhất từ chỉ báo current/total, tối đa 1.000 trang, công cụ lập danh sách từ trang 1. Bấm tải sẽ hỏi xác nhận rồi tự mở lần lượt URL `/p/N/` trong cùng chương, chờ ảnh Blob xuất hiện và đọc ngay trước khi chuyển tiếp. Các địa chỉ Blob tạm không được dùng lại sau khi rời trang.
+- Các URL điều hướng phải cùng origin và nằm trong đường dẫn chương đã quét. Sau khi tải, tab nguồn ở trang cuối đã đọc; công cụ đưa tab quản lý lên trước. Nếu người dùng đổi chương, công cụ dừng. Nếu trang hiện kiểm tra truy cập hoặc không có ảnh sau thời gian chờ, báo lỗi và chờ người dùng xử lý bình thường, không vượt kiểm tra.
+- Nếu không chắc tổng số trang, chỉ lấy các ảnh Blob hiện có; không tự đoán tổng hoặc dò các chương khác. Danh sách URL xuất riêng là URL trang đọc, không phải link tải Blob bền vững.
+- Vẫn chia ZIP theo 100 ảnh/100 MB, giữ các phần đã lưu để thử tiếp khi lỗi. Chỉ giữ thumbnail nhỏ để xem lại và dữ liệu của phần chưa lưu; không giữ byte cả chương trong RAM. Giữ tab nguồn/tab công cụ mở trong lúc làm; đóng tab mất tiến độ chưa lưu.
+- Nếu DevTools làm trang đứng ở Paused in debugger, tiếp tục hoặc đóng DevTools rồi quét lại. Các lệnh đọc tab có thời hạn chờ và có thể dừng từ công cụ.
+
+Kiểm thử `tests/blob_capture_browser.py` dùng Blob URL thật tạo trong trang mẫu không có nội dung truyện: quét từ trang 3 rồi lấy 1–4, kiểm tra đúng byte và thứ tự, Blob bị thu hồi và PNG dự phòng, chưa biết tổng trang, dừng/tiếp tục và chặn đổi chương. Kiểm thử này không phải xác minh lượt tải chương thật trên website đang chặn môi trường phát triển.
 
 ## Phát triển và kiểm thử
 

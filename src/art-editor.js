@@ -1,10 +1,10 @@
-import {suggestMask,maskedOCRInput} from './art-mask.js';
+import {suggestMask,maskedOCRInput,speechTextMask,clearSpeechInk} from './art-mask.js';
 
 export function artBounds(box,image){const x=Math.floor(box.x),y=Math.floor(box.y);return {x,y,w:Math.min(image.width,Math.ceil(box.x+box.w))-x,h:Math.min(image.height,Math.ceil(box.y+box.h))-y};}
 function cropOriginal(image,bounds){const canvas=document.createElement('canvas');canvas.width=bounds.w;canvas.height=bounds.h;canvas.getContext('2d').drawImage(image,bounds.x,bounds.y,bounds.w,bounds.h,0,0,bounds.w,bounds.h);return canvas;}
 export function artOCRCanvas(image,box){
   const bounds=artBounds(box,image),crop=cropOriginal(image,bounds),ctx=crop.getContext('2d'),data=ctx.getImageData(0,0,bounds.w,bounds.h);
-  const patch=box.artPatch,mask=patch&&patch.x===bounds.x&&patch.y===bounds.y&&patch.w===bounds.w&&patch.h===bounds.h?patch.mask:suggestMask(data,{dilation:1});
+  const patch=box.artPatch,mask=patch&&patch.x===bounds.x&&patch.y===bounds.y&&patch.w===bounds.w&&patch.h===bounds.h?patch.mask:(box.mode==='clean'?speechTextMask(data):suggestMask(data,{dilation:1}));
   const binary=maskedOCRInput(data,mask,{ink:box.ocrInk||'dark'});ctx.putImageData(new ImageData(binary.data,bounds.w,bounds.h),0,0);
   const out=document.createElement('canvas'),scale=Math.min(2,1800/Math.max(bounds.w,bounds.h));out.width=Math.max(1,Math.round(bounds.w*scale));out.height=Math.max(1,Math.round(bounds.h*scale));out.getContext('2d').drawImage(crop,0,0,out.width,out.height);crop.width=1;crop.height=1;return out;
 }
@@ -12,7 +12,7 @@ async function blob(canvas){const value=await new Promise(resolve=>canvas.toBlob
 
 export function createArtEditor({getBox,getImage,runTask,cancelTask,onApply}) {
   const $=id=>document.getElementById(id),dialog=$('art-dialog'),maskCanvas=$('art-mask-canvas'),preview=$('art-preview-canvas');
-  let original=null,mask=null,bounds=null,ready=false,painting=false,last=null,worker=null,boxId=null,locked=false;
+  let original=null,mask=null,bounds=null,ready=false,painting=false,last=null,worker=null,boxId=null,locked=false,cleanMode=false;
   let maskHistory=[];
   const rememberMask=()=>{maskHistory.push(mask.slice());if(maskHistory.length>30)maskHistory.shift();};
   function undoMask(){if(worker||locked||painting||!maskHistory.length)return;mask=maskHistory.pop();invalidate();render();info('Đã hoàn tác chỉnh sửa mặt nạ. Bấm Xem nền phục hồi để cập nhật bản xem trước.');}
@@ -36,11 +36,16 @@ export function createArtEditor({getBox,getImage,runTask,cancelTask,onApply}) {
   maskCanvas.onpointerdown=e=>{if(worker||locked||e.button!==0)return;rememberMask();painting=true;last=null;maskCanvas.setPointerCapture(e.pointerId);paint(position(e));};
   maskCanvas.onpointermove=e=>{if(painting)paint(position(e));};
   maskCanvas.onpointerup=maskCanvas.onpointercancel=()=>{painting=false;last=null;};
-  $('art-suggest').onclick=()=>{if(worker||locked||!original)return;rememberMask();mask=suggestMask(original.getContext('2d').getImageData(0,0,bounds.w,bounds.h),{polarity:$('art-polarity').value,threshold:Number($('art-threshold').value),dilation:Number($('art-dilation').value)});invalidate();render();info('Mặt nạ gợi ý có thể dính nét vẽ. Dùng cọ thêm/xóa để chỉ giữ chữ và viền chữ, rồi xem nền phục hồi.');};
+  $('art-suggest').onclick=()=>{if(worker||locked||!original)return;rememberMask();mask=(cleanMode?speechTextMask:suggestMask)(original.getContext('2d').getImageData(0,0,bounds.w,bounds.h),{polarity:$('art-polarity').value,threshold:cleanMode?180:Number($('art-threshold').value),dilation:Number($('art-dilation').value)});invalidate();render();info('Mặt nạ gợi ý có thể dính nét vẽ. Dùng cọ thêm/xóa để chỉ giữ chữ và viền chữ, rồi xem nền phục hồi.');};
   $('art-clear-mask').onclick=()=>{if(worker||locked)return;rememberMask();mask.fill(0);invalidate();render();};
   $('art-cancel-worker').onclick=cancelTask;
   $('art-preview-button').onclick=()=>runTask('Đang phục hồi nền cục bộ…',async signal=>{
     if(!mask?.some(v=>v)){info('Hãy tạo mặt nạ hoặc tô đỏ các nét chữ cần xóa.',true);throw new Error('Chưa có mặt nạ.');}
+    if(cleanMode){
+      const input=original.getContext('2d').getImageData(0,0,bounds.w,bounds.h),result=clearSpeechInk(input,mask);
+      preview.width=bounds.w;preview.height=bounds.h;preview.getContext('2d').putImageData(new ImageData(result.data,bounds.w,bounds.h),0,0);
+      ready=true;$('art-apply').disabled=false;info('Chỉ phần mặt nạ được tô trắng. Kiểm tra viền ô thoại trước khi áp dụng; dùng cọ Gỡ vùng tô nhầm nếu mặt nạ dính viền.');return;
+    }
     const count=mask.reduce((n,v)=>n+Number(v>0),0);if(count/mask.length>.65){info('Mặt nạ phủ quá 65% vùng ảnh. Chỉ tô nét chữ để giữ đủ nền tham chiếu.',true);throw new Error('Mặt nạ quá rộng.');}
     locked=true;
     $('art-preview-button').disabled=true;$('art-cancel-worker').hidden=false;invalidate();info('Đang tải OpenCV cục bộ và phục hồi vùng đỏ…');
@@ -79,8 +84,12 @@ export function createArtEditor({getBox,getImage,runTask,cancelTask,onApply}) {
   return {open(){
     const box=getBox(),img=getImage();if(!box||!img)return;bounds=artBounds(box,img);
     if(bounds.w*bounds.h>2_000_000)throw new Error('Khoanh vùng chữ nhỏ hơn (tối đa 2 triệu pixel) để phục hồi nền.');
+    cleanMode=box.mode==='clean';
+    $('art-dialog-title').textContent=cleanMode?'Xóa chữ, giữ viền ô thoại':'Xóa chữ trên nền tranh';
+    $('art-dialog-description').textContent=cleanMode?'Dành cho ô thoại nền trắng: chỉ tô trắng nét chữ được đánh dấu đỏ. Viền chạm mép vùng chọn và các đường dài được bỏ qua khi gợi ý. Hãy kiểm tra mặt nạ, dùng cọ gỡ phần nhận nhầm; không bảo đảm nhận đúng mọi viền.':'Chỉ phục hồi vùng mặt nạ đỏ bằng OpenCV Telea, chạy ngay trong trình duyệt. Nền phức tạp có thể bị nhòe; đây không phải AI vẽ lại chi tiết. Ảnh gốc luôn được giữ.';
+    $('art-polarity').closest('label').hidden=cleanMode;$('art-threshold').closest('label').hidden=cleanMode;$('art-radius').closest('label').hidden=cleanMode;
     maskHistory=[];boxId=box.id;original=cropOriginal(img,bounds);mask=new Uint8Array(bounds.w*bounds.h);
-    const old=box.artPatch;if(old&&old.x===bounds.x&&old.y===bounds.y&&old.w===bounds.w&&old.h===bounds.h)mask=old.mask.slice();
-    maskCanvas.width=preview.width=bounds.w;maskCanvas.height=preview.height=bounds.h;preview.getContext('2d').drawImage(original,0,0);invalidate();render();info('Tạo mặt nạ gợi ý cho chữ sáng/viền trắng hoặc tô cọ lên chữ. Đừng tô cả khung hình.');dialog.showModal();
+    const old=box.artPatch;if(old&&old.x===bounds.x&&old.y===bounds.y&&old.w===bounds.w&&old.h===bounds.h)mask=old.mask.slice();else if(cleanMode)mask=speechTextMask(original.getContext('2d').getImageData(0,0,bounds.w,bounds.h));
+    maskCanvas.width=preview.width=bounds.w;maskCanvas.height=preview.height=bounds.h;preview.getContext('2d').drawImage(original,0,0);invalidate();render();info(cleanMode?'Đã gợi ý mặt nạ nét chữ. Gỡ phần nhận nhầm viền, rồi bấm Xem nền phục hồi.':'Tạo mặt nạ gợi ý cho chữ sáng/viền trắng hoặc tô cọ lên chữ. Đừng tô cả khung hình.');dialog.showModal();
   }};
 }

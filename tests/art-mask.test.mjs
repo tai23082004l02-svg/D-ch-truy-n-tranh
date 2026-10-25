@@ -28,3 +28,18 @@ test('repaired artwork renders even before translation; no flat white fill',()=>
   let draws=0;const box={mode:'art',translated:'',artPatch:{canvas:{},x:1,y:2,w:3,h:4}};
   paintBox({drawImage(){draws++;},fillRect(){throw Error('Must not white out artwork');}},box);assert.equal(draws,1);
 });
+
+test('speech cleanup preserves border and all unmasked pixels while removing ink',async()=>{
+ const {speechTextMask,clearSpeechInk}=await import('../src/art-mask.js');
+ const width=100,height=100,data=new Uint8ClampedArray(width*height*4).fill(255);
+ const black=(x,y)=>{for(let c=0;c<3;c++)data[(y*width+x)*4+c]=0;};
+ for(let y=0;y<100;y++)black(80,y); // A balloon contour crossing the selected crop.
+ for(let y=30;y<45;y++)for(let x=30;x<35;x++)black(x,y);
+ for(let x=10;x<90;x++)black(x,90); // Long interior line, protected conservatively.
+ const input={width,height,data},mask=speechTextMask(input),output=clearSpeechInk(input,mask);
+ assert.equal(mask[35*width+32],255);assert.equal(output.data[(35*width+32)*4],255);
+ for(let y=0;y<100;y++)assert.equal(mask[y*width+80],0);
+ for(let i=0;i<mask.length;i++)if(!mask[i])assert.deepEqual(output.data.slice(i*4,i*4+4),data.slice(i*4,i*4+4));
+ assert.equal(data[(35*width+32)*4],0);
+ const box=validateBox({x:0,y:0,w:100,h:100,mode:'clean'},100,100);assert.equal(box.mode,'clean');assert.equal(box.strokeWidth,0);
+});

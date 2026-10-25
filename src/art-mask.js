@@ -40,3 +40,27 @@ export function maskedOCRInput(original,mask,{ink='dark'}={}) {
   for(let i=0;i<mask.length;i++)if(mask[i]){const value=(data[i*4]+data[i*4+1]+data[i*4+2])/3;if(ink==='light'?value>=threshold:value<=threshold)out[i*4]=out[i*4+1]=out[i*4+2]=0;}
   return {width,height,data:out};
 }
+
+// Conservative dark-ink selection: edge-connected contours and long lines are protected.
+export function speechTextMask({width,height,data},{threshold=180,dilation=1}={}) {
+  const size=width*height,seen=new Uint8Array(size),queue=new Int32Array(size),mask=new Uint8Array(size),protectedInk=new Uint8Array(size);
+  const dark=i=>(data[i*4]+data[i*4+1]+data[i*4+2])/3<threshold;
+  for(let start=0;start<size;start++){
+    if(seen[start]||!dark(start))continue;
+    let head=0,tail=1,x0=width,y0=height,x1=0,y1=0,edge=false;queue[0]=start;seen[start]=1;
+    while(head<tail){const i=queue[head++],x=i%width,y=Math.floor(i/width);x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);if(x===0||y===0||x===width-1||y===height-1)edge=true;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if((dx||dy)&&x+dx>=0&&x+dx<width&&y+dy>=0&&y+dy<height){const n=i+dy*width+dx;if(!seen[n]&&dark(n)){seen[n]=1;queue[tail++]=n;}}
+    }
+    const w=x1-x0+1,h=y1-y0+1;
+    const border=edge||w>width*.8||h>height*.65||w>h*12||h>w*12;
+    for(let j=0;j<tail;j++)if(border)protectedInk[queue[j]]=255;else if(tail>=2)mask[queue[j]]=255;
+  }
+  const expanded=dilateMask(mask,width,height,dilation),guard=dilateMask(protectedInk,width,height,1);
+  for(let i=0;i<size;i++)if(guard[i])expanded[i]=0;
+  return expanded;
+}
+export function clearSpeechInk(original,mask){
+  const data=original.data.slice();
+  for(let i=0;i<mask.length;i++)if(mask[i])data[i*4]=data[i*4+1]=data[i*4+2]=255;
+  return {width:original.width,height:original.height,data};
+}

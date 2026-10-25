@@ -149,7 +149,8 @@ function renderFields() {
   $('bubble-empty').hidden = !!box; $('bubble-heading').textContent = box ? `Ô thoại ${page.boxes.indexOf(box) + 1}` : 'Chọn một ô thoại';
   $('source-text').value = box?.source || ''; $('translated-text').value = box?.translated || '';
   $('font-size').value = box?.fontSize || 32; $('background-color').value = box?.background || '#ffffff'; $('bold-text').checked = box?.bold !== false;
-  $('box-mode').value=box?.mode||'bubble';$('art-style-fields').hidden=box?.mode!=='art';$('background-field').hidden=box?.mode==='art';
+  $('box-mode').value=box?.mode||'bubble';$('art-style-fields').hidden=!['art','clean'].includes(box?.mode);$('background-field').hidden=['art','clean'].includes(box?.mode);
+  $('art-edit').textContent=box?.mode==='clean'?'Tạo mặt nạ · xóa chữ, giữ viền':'Tạo mặt nạ & phục hồi nền';
   $('text-color').value=box?.textColor||'#ffffff';$('stroke-color').value=box?.strokeColor||'#111111';$('stroke-width').value=box?.strokeWidth??3;$('ocr-ink').value=box?.ocrInk||'dark';
   $('art-undo').disabled=!box?.artPatch;$('art-patch-status').textContent=box?.artPatch?'Đã có nền phục hồi. Đọc ô đang chọn dùng mặt nạ đã lưu; ảnh nguồn vẫn giữ nguyên.':'Chưa phục hồi nền: chữ gốc vẫn còn. Tạo mặt nạ, xem trước và áp dụng rồi đọc chữ/dịch. Không che bằng mảng trắng ở chế độ này.';
   updateFitHint(); renderBubbleList(); updateButtons();
@@ -157,7 +158,7 @@ function renderFields() {
 function updateFitHint() {
   const box = selected();
   const overflow = box?.translated.trim() && !fitText(ctx, box).fits;
-  $('fit-hint').textContent = overflow ? '⚠ Chữ chưa vừa ô dù đã thu nhỏ. Hãy rút gọn bản dịch hoặc xóa ô và vẽ vùng lớn hơn. Trang này sẽ chưa được xuất khi chữ còn tràn.' : box?.mode==='art'?'Chữ Việt có màu và viền, không tô nền phẳng. Xem ảnh gốc để so sánh nền trước/sau; nền nhiều chi tiết có thể bị nhòe.':'Chữ tự thu nhỏ để vừa ô. Nền màu phẳng phù hợp ô thoại; chọn Chữ trên nền tranh để dùng mặt nạ phục hồi.';
+  $('fit-hint').textContent = overflow ? '⚠ Chữ chưa vừa ô dù đã thu nhỏ. Hãy rút gọn bản dịch hoặc xóa ô và vẽ vùng lớn hơn. Trang này sẽ chưa được xuất khi chữ còn tràn.' : box?.mode==='clean'?'Chỉ xóa nét chữ theo mặt nạ, không tô nền chữ nhật. Bấm Tạo mặt nạ, kiểm tra viền rồi áp dụng. Dùng cho ô thoại nền trắng.':box?.mode==='art'?'Chữ Việt có màu và viền, không tô nền phẳng. Xem ảnh gốc để so sánh nền trước/sau; nền nhiều chi tiết có thể bị nhòe.':'Chữ tự thu nhỏ để vừa ô. Nền màu phẳng phù hợp ô thoại; chọn Chữ trên nền tranh để dùng mặt nạ phục hồi.';
   $('fit-hint').style.color = overflow ? '#aa4932' : '';
 }
 function renderBubbleList() {
@@ -221,7 +222,7 @@ for (const [id, field, read] of [['source-text','source',el=>el.value],['transla
   $(id).addEventListener('input', event => { if (state.busy || !selected()) return; selected()[field] = read($(id)); markDirty(event); draw(); updateFitHint(); renderBubbleList(); renderPages(); });
 }
 $('delete-bubble').onclick = () => { if (state.busy || !selected()) return; releasePatch(selected());current().boxes = current().boxes.filter(b=>b.id!==state.selected); state.selected=null; markDirty(); renderFields(); renderPages(); draw(); };
-$('box-mode').onchange=()=>{if(state.busy||!selected())return;const box=selected();box.mode=$('box-mode').value;if(box.mode==='art'){box.textColor='#ffffff';box.strokeColor='#111111';box.strokeWidth=3;}else{box.textColor='#151515';box.strokeWidth=0;}markDirty();renderFields();draw();};
+$('box-mode').onchange=()=>{if(state.busy||!selected())return;const box=selected();releasePatch(box);box.mode=$('box-mode').value;if(box.mode==='art'){box.textColor='#ffffff';box.strokeColor='#111111';box.strokeWidth=3;}else{box.textColor='#151515';box.strokeWidth=0;}markDirty();renderFields();draw();};
 const artEditor=createArtEditor({getBox:selected,getImage:()=>state.image,runTask:task,cancelTask:()=>state.controller?.abort(),onApply:async patch=>{
   const total=[...state.pages,...(state.webtoonOriginals||[])].reduce((sum,p)=>sum+p.blob.size+p.boxes.reduce((n,b)=>n+(b.artPatch?.blob.size||0)+(b.artPatch?.maskBlob.size||0),0),0);
   const old=selected().artPatch,delta=patch.blob.size+patch.maskBlob.size-(old?.blob.size||0)-(old?.maskBlob.size||0);
@@ -327,7 +328,7 @@ async function runOCR(signal,scope='missing') {
       const scanContext=scan.getContext('2d',{willReadFrequently:true});scanContext.fillStyle='#fff';scanContext.fillRect(0,0,scan.width,scan.height);scanContext.drawImage(original,0,0,scan.width,scan.height);
       const sx=page.width/scan.width,sy=page.height/scan.height;
       let regions;
-      if(cropBox?.mode==='art'){
+      if(['art','clean'].includes(cropBox?.mode)){
         regions=[{input:artOCRCanvas(original,cropBox)}];
       }else if(cropBox){
         const crop=document.createElement('canvas'),scale=Math.min(2,1800/Math.max(cropBox.w,cropBox.h));crop.width=Math.max(1,Math.round(cropBox.w*scale));crop.height=Math.max(1,Math.round(cropBox.h*scale));
@@ -472,8 +473,8 @@ $('export-button').onclick=()=>task('Đang kiểm tra chương…',async signal=
     if(!box.translated.trim()){untranslated++;continue;}
     if(!fitText(ctx,box).fits){await activate(page.id);state.selected=box.id;renderFields();draw();throw new Error(`Trang ${i+1} có ô thoại bị tràn chữ. Hãy rút gọn hoặc vẽ lại ô lớn hơn rồi xuất lại.`);}
   }
-  const uncleared=pages.reduce((n,p)=>n+p.boxes.filter(b=>b.mode==='art'&&b.translated.trim()&&!b.artPatch).length,0);
-  if(uncleared&&!confirm(`Có ${uncleared} vùng chữ trên nền tranh chưa phục hồi nền. Chữ gốc có thể còn chồng với bản dịch. Vẫn xuất ảnh?`))return;
+  const uncleared=pages.reduce((n,p)=>n+p.boxes.filter(b=>['art','clean'].includes(b.mode)&&b.translated.trim()&&!b.artPatch).length,0);
+  if(uncleared&&!confirm(`Có ${uncleared} vùng chữ chưa áp dụng mặt nạ làm sạch nền. Chữ gốc có thể còn chồng với bản dịch. Vẫn xuất ảnh?`))return;
   const noBoxes=pages.filter(p=>!p.boxes.length).length;
   if((untranslated||noBoxes)&&!confirm(`Còn ${untranslated} ô chưa dịch và ${noBoxes} trang chưa có ô thoại. Các ô chưa dịch sẽ chưa có chữ Việt; nền phục hồi đã áp dụng vẫn được giữ. Vẫn xuất chương?`))return;
   const zip=new JSZip();const output=document.createElement('canvas'),out=output.getContext('2d');

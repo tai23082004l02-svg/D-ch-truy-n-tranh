@@ -6,7 +6,7 @@ export function validateBox(raw, width, height) {
   if (!raw || !['x', 'y', 'w', 'h'].every(k => Number.isFinite(raw[k]))) throw new Error('Tọa độ ô thoại không hợp lệ.');
   if (raw.w < 4 || raw.h < 4 || raw.x < 0 || raw.y < 0 || raw.x + raw.w > width + 1 || raw.y + raw.h > height + 1) throw new Error('Ô thoại nằm ngoài ảnh hoặc quá nhỏ.');
   const text = key => typeof raw[key] === 'string' ? raw[key].slice(0, 10000) : '';
-  const mode=raw.mode==='art'?'art':'bubble',color=(value,fallback)=>/^#[0-9a-f]{6}$/i.test(value)?value:fallback;
+  const mode=['art','clean'].includes(raw.mode)?raw.mode:'bubble',color=(value,fallback)=>/^#[0-9a-f]{6}$/i.test(value)?value:fallback;
   return { id: typeof raw.id === 'string' && /^[\w-]{1,80}$/.test(raw.id) ? raw.id : crypto.randomUUID(), x: raw.x, y: raw.y, w: Math.min(raw.w, width - raw.x), h: Math.min(raw.h, height - raw.y), source: text('source'), translated: text('translated'), fontSize: Math.max(8, Math.min(160, Number(raw.fontSize) || 32)), background: color(raw.background,'#ffffff'), bold: raw.bold !== false,mode,ocrInk:raw.ocrInk==='light'?'light':'dark',textColor:color(raw.textColor,mode==='art'?'#ffffff':'#151515'),strokeColor:color(raw.strokeColor,'#111111'),strokeWidth:Math.max(0,Math.min(10,raw.strokeWidth!==undefined&&Number.isFinite(Number(raw.strokeWidth))?Number(raw.strokeWidth):(mode==='art'?3:0))) };
 }
 
@@ -47,17 +47,29 @@ export function fitText(ctx, box) {
 }
 
 export function paintBox(ctx, box) {
-  if(box.mode==='art'&&box.artPatch?.canvas){const p=box.artPatch;ctx.drawImage(p.canvas,p.x,p.y,p.w,p.h);}
+  if(box.mode!=='bubble'&&box.artPatch?.canvas){const p=box.artPatch;ctx.drawImage(p.canvas,p.x,p.y,p.w,p.h);}
   if (!box.translated.trim()) return null;
   ctx.save();
   ctx.beginPath(); ctx.rect(box.x, box.y, box.w, box.h); ctx.clip();
-  if(box.mode!=='art'){ctx.fillStyle = box.background; ctx.fillRect(box.x, box.y, box.w, box.h);}
+  if(!['art','clean'].includes(box.mode)){ctx.fillStyle = box.background; ctx.fillRect(box.x, box.y, box.w, box.h);}
   const layout = fitText(ctx, box);
   ctx.fillStyle = box.textColor||'#151515'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.strokeStyle=box.strokeColor||'#111111';ctx.lineWidth=box.strokeWidth||0;ctx.lineJoin='round';
   const lineHeight = layout.size * 1.25;
   const top = box.y + (box.h - lineHeight * layout.lines.length) / 2 + lineHeight / 2;
   layout.lines.forEach((line, i) => {const x=box.x+box.w/2,y=top+i*lineHeight;if(box.mode==='art'&&box.strokeWidth>0)ctx.strokeText(line,x,y);ctx.fillText(line,x,y);});
+  // Put protected contour pixels above the new text as well, so antialiased
+  // Vietnamese glyphs cannot lighten a black balloon border they overlap.
+  if(box.mode==='clean'&&box.artPatch?.canvas){
+    const p=box.artPatch;
+    if(!p.contourCanvas){
+      const layer=document.createElement('canvas');layer.width=p.w;layer.height=p.h;
+      const g=layer.getContext('2d');g.drawImage(p.canvas,0,0,p.w,p.h);const pixels=g.getImageData(0,0,p.w,p.h);
+      for(let i=0;i<p.w*p.h;i++)if(p.mask?.[i]||Math.min(pixels.data[i*4],pixels.data[i*4+1],pixels.data[i*4+2])>=245)pixels.data[i*4+3]=0;
+      g.putImageData(pixels,0,0);p.contourCanvas=layer;
+    }
+    ctx.drawImage(p.contourCanvas,p.x,p.y,p.w,p.h);
+  }
   ctx.restore();
   return layout;
 }

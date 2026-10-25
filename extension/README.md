@@ -1,4 +1,4 @@
-# Lấy ảnh Comix & Naver Webtoon — v1.2.0
+# Lấy ảnh Comix, Naver & HentaiRead — v1.3.0
 
 ## Cài hoặc cập nhật
 
@@ -13,6 +13,7 @@ Dùng trên Chrome/Edge máy tính. Chưa phát hành Chrome Web Store; Chrome/S
 
 - **Comix:** mở một chương tại comix.to, chọn Top to bottom / cuộn dọc. Trang giới thiệu truyện chưa có ảnh chương.
 - **Naver:** mở tập miễn phí công khai trên comic.naver.com hoặc m.comic.naver.com. Trang chủ/danh sách tập chưa có ảnh nội dung. Ví dụ: https://comic.naver.com/webtoon/detail?titleId=777767&no=1
+- **HentaiRead (thử nghiệm):** mở chương truy cập được trong trình duyệt, dùng chế độ liệt kê tất cả ảnh. Bộ nhận diện thử các cấu trúc reader phổ biến; chưa xác minh đúng cấu trúc trên chương thật do Cloudflare trả trang kiểm tra truy cập trong môi trường phát triển, kể cả URL người dùng cung cấp. Không tự giải CAPTCHA, lấy cookie hoặc vượt chặn. Không đưa nội dung chương website này vào kiểm thử.
 - Bấm biểu tượng tiện ích. Nếu thiếu URL, dùng Cuộn tải toàn bộ chương; giữ tab nguồn mở và không đổi tập.
 - Kiểm tra thứ tự, bấm Tải ảnh đã chọn thành ZIP, cấp quyền cho các máy chủ ảnh được liệt kê.
 - Nhập ZIP vào Xưởng dịch. Với tiếng Hàn, chọn OCR Tiếng Hàn.
@@ -36,6 +37,15 @@ Dùng trên Chrome/Edge máy tính. Chưa phát hành Chrome Web Store; Chrome/S
 - Ảnh Comix dùng `no-referrer`. Ảnh Naver từ image-comic.pstatic.net cần `Referer: https://comic.naver.com/`, tương tự yêu cầu ảnh từ trình đọc Naver. Quy tắc `declarativeNetRequestWithHostAccess` chỉ áp dụng tạm cho GET ảnh do chính tiện ích khởi tạo đến đúng hostname này, sau khi người dùng cấp quyền host. Quy tắc được xóa khi thao tác xong hoặc tab công cụ đóng.
 - `optional_host_permissions: https://*/*` chỉ cho phép xin quyền theo host động; không cấp toàn bộ khi cài. Nút tải chỉ yêu cầu các origin ảnh đã chọn. Có thể thu hồi trong cài đặt tiện ích.
 - Khi site vẫn từ chối truy cập, tiện ích báo lỗi, không thử lấy thông tin xác thực để vượt chặn. Cấu trúc trang/quyền truy cập có thể thay đổi theo vùng hoặc thời gian.
+
+
+## Tùy chọn HentaiRead
+
+- Ưu tiên các vùng cụ thể như `.reading-content img.wp-manga-chapter-img`, `.reading-content .page-break img`, `#readerarea img`, `#chapter-content img`; sau đó thử một số container đọc khác. Đây là giả định cấu trúc phổ biến, không phải kết quả xác minh engine của website bị chặn.
+- Lấy URL từ `data-lazy-src`, `data-cfsrc`, `data-original`, `data-src`, `data-url`, rồi mới dùng `currentSrc/src`; chỉ URL HTTPS. Đánh số theo thứ tự ảnh trong DOM của vùng đọc, không tự suy diễn trang thiếu hoặc mở các trang/chương tiếp theo.
+- Số ảnh hiển thị là các phần tử ảnh đang có, chưa xác định được tổng trang của chương. Nếu đang đọc từng ảnh hoặc danh sách chưa tải hết, chuyển sang liệt kê/cuộn rồi quét lại. Ảnh trong canvas hoặc chỉ có blob URL chưa được hỗ trợ.
+- Nếu chưa thấy ảnh, mở tùy chọn HentaiRead và nhập **CSS vùng ảnh** thực tế, bấm Quét lại. Bộ chọn được giới hạn 300 ký tự, chỉ đọc phần tử IMG, không chạy JavaScript. Không dùng `img` cho toàn trang; kiểm tra danh sách xem trước để tránh bìa/banner. Cú pháp sai được báo và không tự thay bằng quét toàn bộ trang.
+- Ô **Gửi nguồn trang đọc** mặc định tắt. Khi bật và bấm tải, tiện ích đặt Referer bằng origin trang nguồn cho GET ảnh từ chính tiện ích đến đúng các máy chủ ảnh đã chọn/cấp quyền; quy tắc tạm được gỡ khi thao tác xong hoặc tab đóng. Đây là thông tin nguồn như yêu cầu ảnh bình thường, không kèm cookie/token. Nếu server vẫn từ chối, công cụ báo lỗi, không thử thông tin xác thực khác.
 
 ## Phát triển và kiểm thử
 

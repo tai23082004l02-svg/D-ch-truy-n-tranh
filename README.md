@@ -4,9 +4,9 @@
 
 Công cụ web tĩnh để biên tập bản dịch theo chương, chạy trên GitHub Pages. Không cần backend, không có khóa API trong mã nguồn.
 
-### Lấy ảnh Comix & Naver Webtoon
+### Lấy ảnh Comix, Naver và HentaiRead
 
-Mở [trang cài tiện ích](https://tai23082004l02-svg.github.io/D-ch-truy-n-tranh/capture.html), tải ZIP v1.2.0 và cài Load unpacked trên Chrome/Edge máy tính. Đã cài bản cũ: thay tệp trong thư mục cũ, Reload tiện ích và mở lại tab công cụ. Hỗ trợ chương Comix ở chế độ cuộn dọc và tập Naver Webtoon miễn phí công khai; chưa hỗ trợ các website khác.
+Mở [trang cài tiện ích](https://tai23082004l02-svg.github.io/D-ch-truy-n-tranh/capture.html), tải ZIP v1.3.0 và cài Load unpacked trên Chrome/Edge máy tính. Đã cài bản cũ: thay tệp trong thư mục cũ, Reload tiện ích và mở lại tab công cụ. Hỗ trợ chương Comix ở chế độ cuộn dọc và tập Naver Webtoon miễn phí công khai; thêm bộ nhận diện HentaiRead ở mức thử nghiệm. Với HentaiRead, Cloudflare chặn trang HTML trong môi trường phát triển nên chưa xác minh trên chương thật; công cụ đọc tab người dùng mở được và cho chỉ định CSS vùng ảnh nếu mặc định không khớp. Các website khác chưa được hỗ trợ.
 
 Tối đa 1.000 ảnh, tự chia ZIP theo 100 ảnh hoặc 100 MB dữ liệu ảnh mỗi phần và giải phóng dữ liệu phần đã lưu. Khi lỗi, giữ tab và bấm tải lại để tiếp tục. Nhập từng ZIP vào xưởng dịch; vẫn giới hạn 250 MB/dự án. Ảnh tiếng Hàn từ Naver có thể OCR bằng lựa chọn Tiếng Hàn.
 

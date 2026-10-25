@@ -32,16 +32,18 @@ with tempfile.TemporaryDirectory() as temporary,sync_playwright() as p:
     tmp=Path(temporary);extension=tmp/'extension';shutil.copytree(ROOT/'extension',extension)
     manifest=json.loads((extension/'manifest.json').read_text())
     manifest['permissions'].append('declarativeNetRequestFeedback')
-    manifest['host_permissions']=['https://comix.to/*','https://cdn.example.test/*','https://comic.naver.com/*','https://image-comic.pstatic.net/*']
+    manifest['host_permissions']=['https://comix.to/*','https://cdn.example.test/*','https://comic.naver.com/*','https://image-comic.pstatic.net/*','https://hentairead.com/*']
     (extension/'manifest.json').write_text(json.dumps(manifest))
     images={}
     for i,color in enumerate(['red','green','blue'],1):
         data=io.BytesIO();Image.new('RGB',(240,320),color).save(data,format='PNG');images[f'{i}.png']=data.getvalue()
-    counts={};fail_second={'enabled':True};fail_bulk={'enabled':True}
+    counts={};fail_second={'enabled':True};fail_bulk={'enabled':True};hread_matches=[]
     def cdn(route):
         name=route.request.url.rsplit('/',1)[-1]
         if route.request.resource_type in ('fetch','xhr'):
             counts[name]=counts.get(name,0)+1
+            if reader.url.startswith('https://hentairead.com/') and not hread_matches:
+                hread_matches.append(collector.evaluate("url=>chrome.declarativeNetRequest.testMatchOutcome({url,type:'xmlhttprequest',initiator:chrome.runtime.getURL('/')})",route.request.url))
             if name=='2.png' and fail_second['enabled']:
                 route.fulfill(status=403,body='Forbidden',headers={'Access-Control-Allow-Origin':'*'});return
             if name=='bulk-111.png' and fail_bulk['enabled']:
@@ -134,7 +136,39 @@ with tempfile.TemporaryDirectory() as temporary,sync_playwright() as p:
     reader.goto('https://comic.naver.com/webtoon/detail?titleId=777767&no=2');collector.bring_to_front()
     collector.locator('#download').click()
     collector.wait_for_function("() => document.querySelector('#status').textContent.includes('đổi chương')",timeout=10000)
+    # HentaiRead adapter is tested with non-explicit fixtures, never live media.
+    hread='''<html><head><title>Reader fixture</title></head><body>
+    <img src="https://cdn.example.test/cover.png"><div class="reading-content">
+    <div class="page-break" style="height:1200px"><img class="wp-manga-chapter-img" data-lazy-src="https://cdn.example.test/reader-1.png" width="240" height="320"></div>
+    <div class="page-break" style="height:1200px"><img class="wp-manga-chapter-img" data-cfsrc="https://cdn.example.test/reader-2.png" width="240" height="320"></div>
+    <div class="page-break" style="height:1200px"><img class="wp-manga-chapter-img" src="https://cdn.example.test/reader-3.png" width="240" height="320"></div>
+    <div class="advertisement"><img src="https://cdn.example.test/banner.png"></div></div>
+    <script>const io=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting&&!e.target.src)e.target.src=e.target.dataset.lazySrc||e.target.dataset.cfsrc;});document.querySelectorAll('img[data-lazy-src],img[data-cfsrc]').forEach(img=>io.observe(img));</script>
+    </body></html>'''
+    custom='<html><title>Custom fixture</title><div class="custom-pages"><img src="https://cdn.example.test/custom-1.png"><img src="https://cdn.example.test/custom-2.png"></div></html>'
+    context.route('https://hentairead.com/**',lambda route:route.fulfill(body=custom if '/custom/' in route.request.url else hread if '/fixture/' in route.request.url else '<html><title>Just a moment</title>No reader</html>',content_type='text/html'))
+    reader.goto('https://hentairead.com/hentai/fixture/');collector.bring_to_front()
+    collector.locator('#scan').click();collector.wait_for_function("() => document.querySelectorAll('.image-card').length===3")
+    assert 'thử nghiệm' in collector.locator('#status').inner_text()
+    collector.locator('#load-pages').click();collector.wait_for_function("() => document.querySelector('#status').textContent.includes('Đã thu thập 3 URL')",timeout=30000)
+    collector.locator('#source-selector').evaluate('el=>el.closest("details").open=true')
+    collector.locator('#reader-referrer').check()
+    with collector.expect_download() as download:collector.locator('#download').click()
+    download.value.save_as(tmp/'hread.zip')
+    collector.wait_for_function("() => document.querySelector('#status').textContent.includes('Tải hoàn tất')")
+    with zipfile.ZipFile(tmp/'hread.zip') as z:assert z.namelist()==['001.png','002.png','003.png']
+    assert hread_matches[0]['matchedRules'],hread_matches
+    assert not collector.evaluate('() => chrome.declarativeNetRequest.getSessionRules()')
+    reader.goto('https://hentairead.com/hentai/custom/?page=1');collector.bring_to_front();collector.locator('#scan').click()
+    collector.wait_for_function("() => document.querySelector('#status').textContent.includes('Chưa thấy ảnh chương')")
+    collector.locator('#source-selector').fill('.custom-pages img');collector.locator('#scan').click()
+    collector.wait_for_function("() => document.querySelectorAll('.image-card').length===2")
+    collector.locator('#source-selector').fill('[');collector.locator('#scan').click()
+    collector.wait_for_function("() => document.querySelector('#status').textContent.includes('CSS vùng ảnh không hợp lệ')")
+    collector.locator('#source-selector').fill('.custom-pages img')
+    reader.goto('https://hentairead.com/hentai/custom/?page=2');collector.bring_to_front();collector.locator('#download').click()
+    collector.wait_for_function("() => document.querySelector('#status').textContent.includes('đổi chương')")
     assert not errors,errors
     collector.screenshot(path='/tmp/comix-capture-extension.png',full_page=True)
     context.close()
-    print('PASS: real extension APIs, Comix and Naver selectors, lazy scrolling, 130/106-image chapters split correctly, Naver Referer scope/cleanup, cached retry, exact bytes/order, query-based chapter-change guard.')
+    print('PASS: extension APIs, Comix/Naver/HRead fixtures, lazy attrs, scoped/custom selectors, image order, split/resume ZIP, temporary Referer scope/cleanup and chapter-change guards.')

@@ -2,35 +2,47 @@
 // inspect the normal reader DOM only; no framework internals or chapter APIs.
 export async function inspectReader(options={}) {
   const naver=['comic.naver.com','m.comic.naver.com'].includes(location.hostname);
-  const keyOfLocation=()=>{const u=new URL(location.href);return u.origin+u.pathname+(naver?'?titleId='+u.searchParams.get('titleId')+'&no='+u.searchParams.get('no'):'');};
+  const hread=['hentairead.com','www.hentairead.com'].includes(location.hostname);
+  const keyOfLocation=()=>{const u=new URL(location.href);const query=hread?new URLSearchParams([...u.searchParams].filter(([k])=>['chapter','chapter_id','page','paged','id','p'].includes(k))).toString():'';return u.origin+u.pathname+(naver?'?titleId='+u.searchParams.get('titleId')+'&no='+u.searchParams.get('no'):query?'?'+query:'');};
   const key=keyOfLocation();
   if(options.sourceKey&&key!==options.sourceKey)return {error:'Tab nguồn đã đổi chương. Quét lại trước khi tiếp tục.'};
-  const nodes=()=>[...document.querySelectorAll(naver?'#comic_view_area img[id^="content_image_"], .wt_viewer img[id^="content_image_"], #sectionContWide img[id^="content_image_"]':'.rpage-page[data-page]')];
-  const number=node=>naver?Number(node.id.replace('content_image_',''))+1:Number(node.dataset.page);
-  const imageOf=node=>naver?node:node.querySelector('img.rpage-page__img');
+  let selector='';
+  if(hread){
+    if(new URL(location.href).searchParams.get('style')==='paged')return {error:'Trang đang ở chế độ từng ảnh. Chuyển sang List / đọc cuộn trước khi lấy cả chương.'};
+    const custom=typeof options.selector==='string'?options.selector.trim():'';
+    if(custom.length>300||/^(?:img|body\s+img|html\s+img)$/i.test(custom))return {error:'Hãy dùng CSS chỉ rõ vùng ảnh truyện, ví dụ .reading-content img; không quét toàn bộ img của trang.'};
+    const candidates=custom?[custom]:['.reading-content img.wp-manga-chapter-img','.reading-content .page-break img','#readerarea img','#chapter-content img','.reading-content img','#manga-reader img','#image-container img'];
+    try{selector=candidates.find(value=>[...document.querySelectorAll(value)].some(n=>n.tagName==='IMG'))||custom;}catch{return {error:'CSS vùng ảnh không hợp lệ. Kiểm tra bộ chọn rồi quét lại.'};}
+  }
+  const nodes=()=>[...document.querySelectorAll(hread?(selector||'.reading-content img.wp-manga-chapter-img'):naver?'#comic_view_area img[id^="content_image_"], .wt_viewer img[id^="content_image_"], #sectionContWide img[id^="content_image_"]':'.rpage-page[data-page]')].filter(node=>!hread||(node.tagName==='IMG'&&!node.closest('header,footer,nav,.ads,.advertisement,.adsbygoogle,[data-ad-slot]')));
+  const number=node=>hread?nodes().indexOf(node)+1:naver?Number(node.id.replace('content_image_',''))+1:Number(node.dataset.page);
+  const imageOf=node=>naver||hread?node:node.querySelector('img.rpage-page__img');
+  const sourceOf=img=>img?.getAttribute('data-lazy-src')||img?.getAttribute('data-cfsrc')||img?.getAttribute('data-original')||img?.getAttribute('data-src')||img?.getAttribute('data-url')||img?.currentSrc||img?.getAttribute('src')||'';
   if(options.scrollToPage){
-    const node=nodes().find(n=>number(n)===options.scrollToPage);
+    const current=nodes(),node=hread?current[options.scrollToPage-1]:current.find(n=>number(n)===options.scrollToPage);
     if(!node)return {error:`Không tìm thấy trang ${options.scrollToPage}. Hãy mở đúng tập và dùng chế độ cuộn dọc.`};
     node.scrollIntoView({behavior:'instant',block:'center'});
     for(let attempt=0;attempt<40;attempt++){
       await new Promise(resolve=>setTimeout(resolve,125));
       if(keyOfLocation()!==key)return {error:'Tab nguồn đã đổi chương trong lúc tải.'};
-      const image=imageOf(node);if(image?.complete&&image.naturalWidth>0)break;
+      const image=imageOf(node);let expected='';try{expected=new URL(sourceOf(image),location.href).href;}catch{}
+      if(image?.complete&&image.naturalWidth>0&&(!hread||image.currentSrc===expected))break;
     }
   }
   const rows=nodes();
-  const pages=rows.map(node=>{
+  const pages=rows.map((node,index)=>{
     const img=imageOf(node);
-    const raw=img?.getAttribute('data-original')||img?.getAttribute('data-src')||img?.currentSrc||img?.getAttribute('src')||'';
+    const raw=sourceOf(img);
     let url='';try{const parsed=new URL(raw,location.href);if(raw&&parsed.protocol==='https:')url=parsed.href;}catch{}
-    return {page:number(node),url,width:img?.naturalWidth||Number(img?.getAttribute('width'))||0,height:img?.naturalHeight||Number(img?.getAttribute('height'))||0,loaded:!!img?.complete&&img.naturalWidth>0};
+    return {page:hread?index+1:number(node),url,width:img?.naturalWidth||Number(img?.getAttribute('width'))||0,height:img?.naturalHeight||Number(img?.getAttribute('height'))||0,loaded:!!img?.complete&&img.naturalWidth>0&&(!hread||img.currentSrc===url)};
   }).filter(row=>Number.isInteger(row.page)&&row.page>0).sort((a,b)=>a.page-b.page);
-  return {title:document.title,url:location.href,sourceKey:key,provider:naver?'naver':'comix',pages,scrollY:window.scrollY,vertical:naver||!!document.querySelector('.rpage.rpage--ttb'),expectedPages:naver?pages.length:document.querySelectorAll('.rpage-progress__seg').length||pages.length};
+  return {title:document.title,url:location.href,sourceKey:key,provider:hread?'hread':naver?'naver':'comix',selector,pages,scrollY:window.scrollY,vertical:naver||hread||!!document.querySelector('.rpage.rpage--ttb'),expectedPages:naver||hread?pages.length:document.querySelectorAll('.rpage-progress__seg').length||pages.length};
 }
 
 export function restoreScroll(y,sourceKey) {
   const u=new URL(location.href),naver=['comic.naver.com','m.comic.naver.com'].includes(u.hostname);
-  const key=u.origin+u.pathname+(naver?'?titleId='+u.searchParams.get('titleId')+'&no='+u.searchParams.get('no'):'');
+  const hread=['hentairead.com','www.hentairead.com'].includes(u.hostname),query=hread?new URLSearchParams([...u.searchParams].filter(([k])=>['chapter','chapter_id','page','paged','id','p'].includes(k))).toString():'';
+  const key=u.origin+u.pathname+(naver?'?titleId='+u.searchParams.get('titleId')+'&no='+u.searchParams.get('no'):query?'?'+query:'');
   if(key===sourceKey)window.scrollTo({top:y,behavior:'instant'});
 }
 
@@ -40,7 +52,7 @@ export function safeFilename(value) {
 }
 
 export function validatePages(rows) {
-  if(!Array.isArray(rows)||!rows.length)throw new Error('Chưa thấy ảnh chương. Mở một chương Comix hoặc một tập Naver miễn phí, chuyển sang cuộn dọc rồi bấm biểu tượng tiện ích lại. Trang giới thiệu/bìa truyện chưa có ảnh chương.');
+  if(!Array.isArray(rows)||!rows.length)throw new Error('Chưa thấy ảnh chương. Mở chương trên website được hỗ trợ, chuyển sang cuộn dọc rồi quét lại. Với HentaiRead có thể cần chỉ định CSS vùng ảnh. Trang chủ/bìa hoặc trang kiểm tra truy cập chưa có ảnh chương.');
   if(rows.length>1000)throw new Error('Chương vượt 1.000 ảnh. Bản này hỗ trợ tối đa 1.000 ảnh, chia ZIP theo từng phần.');
   const seen=new Set();
   for(const row of rows){

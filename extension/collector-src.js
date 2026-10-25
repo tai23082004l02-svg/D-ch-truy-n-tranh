@@ -13,6 +13,7 @@ function update(){
   $('scan').disabled=state.busy;$('load-pages').disabled=state.busy||!state.snapshot;
   $('select-all').disabled=state.busy||!state.rows.length;$('select-none').disabled=state.busy||!state.rows.length;
   $('zip-name').disabled=state.busy;$('stop').hidden=!state.busy;
+  $('source-selector').disabled=state.busy;$('reader-referrer').disabled=state.busy;
   $('image-count').textContent=`${state.rows.filter(row=>row.url).length}/${state.rows.length} ảnh có URL · đã chọn ${count}`;
   $('hosts').textContent=hosts.length?`Chỉ xin quyền tải từ: ${hosts.join(', ')}.`:'Chọn ảnh để xem các máy chủ sẽ được tải.';
   for(const input of $('image-list').querySelectorAll('input'))input.disabled=state.busy||!state.rows.find(row=>row.page===Number(input.value))?.url;
@@ -32,7 +33,7 @@ function render(){
 async function execute(func,args=[]){
   if(!Number.isInteger(sourceTab)||sourceTab<1)throw new Error('Hãy mở tiện ích bằng biểu tượng trên tab truyện Comix.');
   const tab=await chrome.tabs.get(sourceTab);
-  if(!['comix.to','comic.naver.com','m.comic.naver.com'].includes(new URL(tab.url||'about:blank').hostname))throw new Error('Mở một chương Comix hoặc tập Naver Webtoon miễn phí, rồi bấm biểu tượng tiện ích.');
+  if(!['comix.to','comic.naver.com','m.comic.naver.com','hentairead.com','www.hentairead.com'].includes(new URL(tab.url||'about:blank').hostname))throw new Error('Mở chương trên Comix, Naver Webtoon hoặc HentaiRead rồi bấm biểu tượng tiện ích.');
   const results=await chrome.scripting.executeScript({target:{tabId:sourceTab},func,args});
   if(results[0]?.result?.error)throw new Error(results[0].result.error);
   if(!results[0]?.result)throw new Error('Không đọc được tab nguồn. Mở lại tiện ích trên tab chương truyện.');
@@ -51,9 +52,9 @@ function acceptSnapshot(snapshot,keepSelection=false,paint=true){
   if(!same)$('zip-name').value=safeFilename(snapshot.title)+'-raw';if(paint)render();
 }
 async function scan(){
-  const snapshot=await execute(inspectReader);acceptSnapshot(snapshot);
+  const snapshot=await execute(inspectReader,[{selector:$('source-selector').value}]);acceptSnapshot(snapshot);
   const missing=state.rows.filter(row=>!row.url).length;
-  message(`Đã thấy ${state.rows.length} trang.${missing?` Còn ${missing} ảnh lazy-load chưa có URL; dùng Cuộn tải toàn bộ chương.`:' Kiểm tra thứ tự và chọn Tải ảnh đã chọn thành ZIP.'}`);
+  message(`Đã thấy ${state.rows.length} trang.${missing?` Còn ${missing} ảnh lazy-load chưa có URL; dùng Cuộn tải toàn bộ chương.`:' Kiểm tra thứ tự và chọn Tải ảnh đã chọn thành ZIP.'}${snapshot.provider==='hread'?` Bộ nhận diện thử nghiệm dùng CSS: ${snapshot.selector}. Số ảnh là phần hiện có trong trang, chưa xác nhận tổng chương; hãy dùng chế độ đọc liệt kê tất cả ảnh.`:''}`);
 }
 async function run(action){
   if(state.busy)return;state.busy=true;state.controller=new AbortController();update();
@@ -69,13 +70,14 @@ $('load-pages').onclick=()=>run(async signal=>{
   const own=await chrome.tabs.getCurrent();
   await chrome.tabs.update(sourceTab,{active:true});
   try{
-    for(const [i,row]of state.rows.entries()){
+    for(let i=0;i<state.rows.length;i++){
+      const row=state.rows[i];
       aborted(signal);message(`Đang tải lazy-load: trang ${i+1}/${state.rows.length}…`);
-      const snapshot=await execute(inspectReader,[{sourceKey:original.sourceKey,scrollToPage:row.page}]);
+      const snapshot=await execute(inspectReader,[{sourceKey:original.sourceKey,scrollToPage:row.page,selector:original.selector}]);
       acceptSnapshot(snapshot,true,false);if((i+1)%25===0)render();
     }
     const missing=state.rows.filter(row=>!row.url||!row.loaded).length;
-    message(missing?`Đã cuộn qua chương. Còn ${missing} ảnh chưa tải xong trên trang nguồn; kiểm tra Comix rồi quét lại.`:`Đã thu thập ${state.rows.length} URL ảnh. Kiểm tra danh sách trước khi xuất.`);
+    message((missing?`Đã cuộn qua chương. Còn ${missing} ảnh chưa tải xong trên trang nguồn; kiểm tra trang đọc rồi quét lại.`:`Đã thu thập ${state.rows.length} URL ảnh. Kiểm tra danh sách trước khi xuất.`)+(state.snapshot.provider==='hread'?' HentaiRead: chỉ xác nhận các ảnh hiện có trong DOM; chưa biết tổng chương, hãy kiểm tra chế độ đọc tất cả ảnh.':''));
   }finally{
     render();
     await chrome.scripting.executeScript({target:{tabId:sourceTab},func:restoreScroll,args:[original.scrollY,original.sourceKey]}).catch(()=>{});
@@ -114,11 +116,14 @@ $('download').onclick=()=>{
     if(state.snapshot.provider==='naver'&&rows.some(row=>new URL(row.url).hostname==='image-comic.pstatic.net')){
       const own=await chrome.tabs.getCurrent();state.ruleId=10000+own.id;
       await chrome.declarativeNetRequest.updateSessionRules({removeRuleIds:[state.ruleId],addRules:[{id:state.ruleId,priority:1,action:{type:'modifyHeaders',requestHeaders:[{header:'Referer',operation:'set',value:'https://comic.naver.com/'}]},condition:{requestDomains:['image-comic.pstatic.net'],initiatorDomains:[chrome.runtime.id],resourceTypes:['xmlhttprequest'],requestMethods:['get']}}]});
+    }else if(state.snapshot.provider==='hread'&&$('reader-referrer').checked){
+      const own=await chrome.tabs.getCurrent();state.ruleId=10000+own.id;
+      await chrome.declarativeNetRequest.updateSessionRules({removeRuleIds:[state.ruleId],addRules:[{id:state.ruleId,priority:1,action:{type:'modifyHeaders',requestHeaders:[{header:'Referer',operation:'set',value:new URL(state.snapshot.url).origin+'/'}]},condition:{requestDomains:[...new Set(rows.map(row=>new URL(row.url).hostname))],initiatorDomains:[chrome.runtime.id],resourceTypes:['xmlhttprequest'],requestMethods:['get']}}]});
     }
     const wanted=new Set(rows.map(row=>row.url));for(const key of state.cache.keys())if(!wanted.has(key))state.cache.delete(key);
     if(rows.length!==state.rows.length&&!confirm(`Chỉ xuất ${rows.length}/${state.rows.length} ảnh đã chọn. Bạn muốn tải một phần chương?`))return;
     // Ensure the reader still refers to this chapter; never mix different chapters.
-    await execute(inspectReader,[{sourceKey:state.snapshot.sourceKey}]);
+    await execute(inspectReader,[{sourceKey:state.snapshot.sourceKey,selector:state.snapshot.selector}]);
     const base=safeFilename($('zip-name').value);
     const jobKey=JSON.stringify([state.snapshot.sourceKey,base,rows.map(row=>[row.page,row.url])]);
     if(state.jobKey!==jobKey){state.jobKey=jobKey;state.completed.clear();state.parts=0;}

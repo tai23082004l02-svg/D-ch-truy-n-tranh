@@ -15,6 +15,7 @@ Tối đa 1.000 ảnh, tự chia ZIP theo 100 ảnh hoặc 100 MB dữ liệu �
 ### Sử dụng
 
 1. Nhập nhiều ảnh PNG/JPG/WEBP hoặc một ZIP. Trang được sắp theo tên tệp (1, 2, …, 10).
+   Với webtoon bị cắt ngang ô thoại: nhập đủ các phần ZIP theo đúng thứ tự rồi dùng **Ghép & chia lại webtoon** trước khi OCR (xem bên dưới).
 2. Chọn tiếng Anh, tiếng Hàn hoặc tiếng Nhật chữ ngang, chạy **OCR ô thoại cả chương**. Công cụ tách ô nền trắng, bỏ viền/nét vẽ, rồi OCR từng vùng và loại kết quả thiếu tin cậy. Trang đã có ô được bỏ qua. Nếu đang có kết quả sai từ bản cũ: chọn **OCR lại trang này** (xác nhận thay kết quả trên trang). Ô bị sót: kéo để khoanh gọn chữ rồi bấm **Đọc ô đang chọn**. Muốn sửa vùng: chọn ô và bấm **Khoanh lại vùng ô này**, kéo khung mới; nội dung và bản dịch được giữ lại.
 3. Dịch bằng một trong hai cách:
    - Mở **Dịch tự động bằng Gemini**, nhập khóa API cá nhân và ghi chú xưng hô. Công cụ gửi tối đa 30 ô mỗi lô; lần chạy sau bỏ qua ô đã dịch. API có thể phát sinh phí. Mô hình mặc định là `gemini-2.5-flash`, có thể thay đổi trong giao diện.
@@ -24,6 +25,16 @@ Tối đa 1.000 ảnh, tự chia ZIP theo 100 ảnh hoặc 100 MB dữ liệu �
 6. **Xuất ảnh ZIP** tạo PNG theo thứ tự, không có khung biên tập. Duyệt lại trước khi đăng.
 
 Giới hạn: 1.000 trang/chương, 30 MB/ảnh, 24 triệu điểm ảnh/ảnh, tổng ảnh 250 MB. Trình duyệt có ít bộ nhớ nên chia chương thành các phần nhỏ hơn. ZIP có mật khẩu không được hỗ trợ.
+
+### Ghép và chia lại webtoon
+
+Ảnh Naver thường là các lát liên tiếp của một dải cuộn, nên đường cắt tệp có thể nằm giữa ô thoại. Trong xưởng dịch, bấm **Ghép & chia lại webtoon**, giữ chiều cao mặc định 4.000 px và khoảng trống tối thiểu 40 px để thử trước. Công cụ nối theo thứ tự đang có, tìm dải nền trắng/đen đồng đều trên toàn chiều ngang để chia lại. Các ảnh phải cùng chiều rộng; không tự co giãn, bỏ lề hay xóa pixel. Nhập đủ các phần ZIP trước khi ghép để nối được cả ô thoại ở ranh giới giữa hai ZIP.
+
+Không tạo canvas dài bằng cả chương: quét theo dải 256 hàng và dựng từng đoạn đầu ra. Đoạn có thể dài hơn chiều cao mong muốn để tránh cắt nội dung, tối đa 12.000 px và vẫn trong giới hạn 24 triệu điểm ảnh. Nếu không có khoảng trống an toàn, công cụ giữ vùng chồng lặp (256–600 px tùy chiều rộng), đánh dấu tên `can-kiem-tra` và báo số điểm cần duyệt. Phần chồng lặp có thể làm lặp nội dung/OCR; không bảo đảm mọi ô thoại đều nguyên vẹn trong trường hợp này. Đây là cách chọn điểm chia theo hình ảnh, không phải mô hình hiểu khung truyện.
+
+Bộ ảnh mới chưa có OCR. Dùng **Tải bộ ảnh đã ghép** để tải PNG chưa chèn bản dịch, kèm `webtoon-layout.json` ghi tọa độ đoạn trong dải nguồn; hoặc chạy OCR/dịch trực tiếp trên bộ mới. **Khôi phục ảnh gốc** trở về toàn bộ ảnh cùng OCR/bản dịch trước khi ghép. **Lưu dự án** giữ cả bộ mới và bản gốc dự phòng để khôi phục sau khi mở lại. Tổng ảnh gốc và ảnh mới phải dưới 250 MB. Sau khi ghép, muốn nhập thêm ZIP cần khôi phục ảnh gốc rồi ghép lại.
+
+Kiểm thử: `python tests/webtoon_browser.py` kiểm tra pixel không mất/đổi thứ tự, ô thoại qua đường cắt cũ, bản gốc trong dự án, lỗi khác chiều rộng và trường hợp cần chồng lặp. `WEBTOON_SOURCE_DIR=/duong-dan/anh-jpg python tests/webtoon_live_browser.py` là kiểm tra tùy chọn với ảnh nguồn có sẵn. Bộ Naver công khai 106 ảnh đã được thử thành 42 đoạn ở thiết lập mặc định và kiểm tra pixel qua đường nối ảnh 7/8; ảnh truyện dùng để thử không được đưa vào mã nguồn.
 
 ### Quyền riêng tư và giới hạn
 

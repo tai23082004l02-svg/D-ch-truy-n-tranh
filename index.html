@@ -7,8 +7,8 @@
   <meta name="description" content="Dịch truyện theo chương: OCR, chỉnh ô thoại và xuất ảnh tiếng Việt ngay trên trình duyệt.">
   <title>Xưởng dịch truyện</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=3-naver">
-  <script defer src="./assets/app.js?v=3-naver"></script>
+  <link rel="stylesheet" href="./style.css?v=4-webtoon">
+  <script defer src="./assets/app.js?v=4-webtoon"></script>
 </head>
 <body>
   <header class="topbar">
@@ -22,6 +22,7 @@
       <div class="toolbar-group"><button id="import-button" class="primary">＋ Nhập ảnh / ZIP</button><button id="restore-button">Mở dự án</button><span id="page-count" class="muted">Chưa có trang</span></div>
       <div class="toolbar-group"><button id="save-button" disabled>Lưu dự án</button><button id="export-button" class="dark" disabled>Xuất ảnh ZIP ↓</button></div>
     </section>
+    <section class="toolbar webtoon-tools" aria-label="Ghép ảnh webtoon"><div class="toolbar-group"><button id="webtoon-button" disabled>Ghép &amp; chia lại webtoon</button><button id="webtoon-revert" disabled>Khôi phục ảnh gốc</button><button id="webtoon-export" disabled>Tải bộ ảnh đã ghép</button></div></section>
     <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,.zip" multiple hidden>
     <input id="project-input" type="file" accept=".zip" hidden>
     <input id="translation-input" type="file" accept=".json,application/json" hidden>
@@ -47,6 +48,7 @@
     <footer class="footer"><span>Làm từng chương. Giữ từng câu chuyện.</span><span>Tệp dự án giúp lưu tiến độ · hãy lưu trước khi đóng tab</span></footer>
   </main>
   <div id="busy-bar" class="busy-bar" hidden><span id="busy-label">Đang xử lý…</span><progress id="progress" max="100" value="0"></progress><button id="cancel-button">Dừng</button></div>
+  <dialog id="webtoon-dialog"><h2>Ghép và chia lại ảnh webtoon</h2><p id="webtoon-summary"></p><label for="webtoon-height">Chiều cao mong muốn mỗi đoạn (px)</label><input id="webtoon-height" type="number" min="800" max="10000" step="100" value="4000"><label for="webtoon-gap">Khoảng trống tối thiểu (px)</label><input id="webtoon-gap" type="number" min="20" max="200" value="40"><p>Ảnh cần cùng chiều rộng, không tự co giãn hoặc cắt bỏ pixel. Công cụ tìm dải nền trắng/đen đồng đều để đặt điểm chia. Nếu không có chỗ an toàn trong giới hạn kích thước, đoạn dài sẽ có phần chồng lặp và được đánh dấu cần kiểm tra; vẫn có thể còn ô thoại chưa trọn.</p><p>Ảnh gốc và OCR/bản dịch cũ được giữ trong bản dự phòng, kể cả khi Lưu dự án. Bộ ảnh mới cần OCR lại. Không tạo một canvas dài bằng cả chương.</p><div class="toolbar-group"><button id="webtoon-start" class="primary">Ghép &amp; chia lại</button><form method="dialog"><button>Để sau</button></form></div></dialog>
   <dialog id="help-dialog"><h2>Dịch một chương trong 6 bước</h2><ol><li>Nhập ảnh hoặc ZIP. Tên tệp như 001, 002 giúp giữ đúng thứ tự.</li><li>Chọn ngôn ngữ và chạy OCR. Kiểm tra vùng nhận diện, xóa ô thừa; kéo trên ảnh để thêm vùng bị sót.</li><li>Nhập khóa Gemini để dịch tự động, hoặc xuất JSON để dịch bằng ChatGPT rồi nhập lại.</li><li>Chọn ô thoại, sửa bản dịch, cỡ chữ và màu nền. Vùng OCR hình chữ nhật có thể che tranh nếu quá rộng: xóa và vẽ lại vùng gọn hơn.</li><li>Lưu dự án ZIP để mở lại sau. Ứng dụng không tự lưu khi đóng tab.</li><li>Xuất ảnh ZIP. Chỉ bản dịch có nội dung mới được chèn; xem lại toàn chương trước khi đăng.</li></ol><p>Không có máy chủ nhận ảnh. OCR và xuất ảnh chạy trong trình duyệt; dịch Gemini gửi lời thoại đến Google khi bạn bấm dịch. Đây là công cụ hỗ trợ biên tập, chưa tự phục hồi nét vẽ dưới chữ hay dịch hiệu ứng âm thanh.</p><form method="dialog"><button class="primary">Bắt đầu làm thôi</button></form></dialog>
 </body>
 </html>

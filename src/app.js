@@ -2,10 +2,12 @@ import JSZip from 'jszip';
 import { createWorker } from 'tesseract.js';
 import { LIMITS, naturalCompare, validateBox, paintBox, fitText, parseTranslations } from './core.js';
 import { findSpeechRegions, usableOCR, isolateCropInk } from './ocr-regions.js';
+import {reflowWebtoon} from './webtoon.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('editor'), ctx = canvas.getContext('2d');
-const state = { pages: [], active: null, selected: null, image: null, busy: false, dirty: false, controller: null, drag: null, redrawBoxId:null };
+const state = { pages: [], active: null, selected: null, image: null, busy: false, dirty: false, controller: null, drag: null, redrawBoxId:null,webtoonOriginals:null,webtoonLayout:null };
+function releaseProject(){for(const page of [...state.pages,...(state.webtoonOriginals||[])])URL.revokeObjectURL(page.url);}
 let pageLoad = 0;
 const current = () => state.pages.find(p => p.id === state.active);
 const selected = () => current()?.boxes.find(b => b.id === state.selected);
@@ -38,6 +40,9 @@ function updateButtons() {
   for (const id of ['save-button', 'export-button', 'ocr-button', 'translate-button', 'text-export', 'text-import', 'clear-button']) $(id).disabled = !has;
   $('delete-page').disabled = !current(); $('delete-bubble').disabled = !box; $('bubble-fields').disabled = !box;
   $('ocr-page-button').disabled=!current(); $('ocr-region-button').disabled=!box;
+  $('webtoon-button').disabled=state.pages.length<2||!!state.webtoonOriginals;
+  $('webtoon-revert').disabled=!state.webtoonOriginals;$('webtoon-export').disabled=!state.webtoonLayout;
+  $('import-button').disabled=!!state.webtoonOriginals;
   $('page-count').textContent = has ? `${state.pages.length} trang · ${state.pages.reduce((n,p)=>n+p.boxes.length,0)} ô thoại` : 'Chưa có trang';
   $('chapter-size').textContent = state.pages.length;
   const page=current(); if(page) $('image-size').textContent=`${page.width} × ${page.height} px · ${page.boxes.length} ô thoại`;
@@ -159,6 +164,7 @@ function checkZip(zip) {
   if (entries.length > 2100 || total > LIMITS.totalBytes) throw new Error('ZIP quá lớn: tối đa 2.100 tệp và 250 MB dữ liệu giải nén.');
 }
 async function importImages(files, signal) {
+  if(state.webtoonOriginals)throw new Error('Khôi phục ảnh gốc trước khi nhập thêm ZIP, rồi ghép lại sau khi đã nhập đủ các phần.');
   const candidates = [];
   for (const file of files) {
     assertNotAborted(signal);
@@ -195,7 +201,22 @@ $('delete-page').onclick = () => {
   if(state.busy || !current() || !confirm('Xóa trang này và toàn bộ ô thoại trên trang?')) return;
   const index=state.pages.indexOf(current()); URL.revokeObjectURL(current().url); state.pages.splice(index,1); markDirty(); activate(state.pages[Math.min(index,state.pages.length-1)]?.id);
 };
-$('clear-button').onclick = () => { if(state.busy || !confirm('Xóa chương hiện tại? Hãy lưu dự án trước nếu bạn muốn mở lại.')) return; state.pages.forEach(p=>URL.revokeObjectURL(p.url)); state.pages=[]; state.dirty=false; activate(null);status('Đã xóa chương. Bạn có thể nhập chương mới.'); };
+$('clear-button').onclick = () => { if(state.busy || !confirm('Xóa chương hiện tại và bản ảnh gốc dự phòng? Hãy lưu dự án trước nếu bạn muốn mở lại.')) return; releaseProject();state.pages=[];state.webtoonOriginals=null;state.webtoonLayout=null;state.dirty=false; activate(null);status('Đã xóa chương. Bạn có thể nhập chương mới.'); };
+
+$('webtoon-button').onclick=()=>{if(state.busy)return;$('webtoon-summary').textContent=`Ghép ${state.pages.length} ảnh theo đúng thứ tự đang có. Nhập đủ các phần ZIP trước để nối cả ô thoại ở ranh giới giữa hai phần.`;$('webtoon-dialog').showModal();};
+$('webtoon-start').onclick=()=>{
+  const target=Number($('webtoon-height').value),minGap=Number($('webtoon-gap').value);
+  if(!Number.isInteger(target)||target<800||target>10000||!Number.isInteger(minGap)||minGap<20||minGap>200){$('webtoon-summary').textContent='Chiều cao cần từ 800–10.000 px; khoảng trống từ 20–200 px, dùng số nguyên.';return;}
+  if(state.pages.some(p=>p.boxes.length)&&!confirm('Bộ ảnh mới cần OCR lại. Ảnh gốc cùng OCR/bản dịch hiện có sẽ được giữ trong bản dự phòng và tệp Lưu dự án. Tiếp tục?'))return;
+  $('webtoon-dialog').close();
+  task('Đang ghép và tìm điểm chia…',async signal=>{
+    const result=await reflowWebtoon(state.pages,{target,minGap},{signal,onProgress:progress});
+    state.webtoonOriginals=state.pages;state.pages=result.pages;state.webtoonLayout=result.layout;markDirty();await activate(state.pages[0].id);
+    status(`Đã ghép ${state.webtoonOriginals.length} ảnh và chia thành ${state.pages.length} đoạn. ${result.forcedCount?`${result.forcedCount} điểm chưa có khoảng trống an toàn: giữ phần chồng lặp để bạn kiểm tra, các đoạn có tên “can-kiem-tra”.`:'Các điểm chia mới nằm trong dải nền trắng/đen đồng đều.'} Ảnh gốc và OCR cũ được giữ để khôi phục. Hãy xem lại trước khi OCR.`);
+  });
+};
+$('webtoon-revert').onclick=()=>{if(state.busy||!state.webtoonOriginals)return;if(!confirm('Trở về ảnh gốc và OCR/bản dịch cũ? Chỉnh sửa trên bộ ảnh đã ghép sẽ bị bỏ; hãy Lưu dự án nếu cần giữ.'))return;state.pages.forEach(p=>URL.revokeObjectURL(p.url));state.pages=state.webtoonOriginals;state.webtoonOriginals=null;state.webtoonLayout=null;markDirty();activate(state.pages[0]?.id);status('Đã khôi phục ảnh gốc và các ô thoại trước khi ghép.');};
+$('webtoon-export').onclick=()=>task('Đang xuất bộ ảnh đã ghép…',async signal=>{const zip=new JSZip();for(const p of state.pages)zip.file(p.name,p.blob);zip.file('webtoon-layout.json',JSON.stringify(state.webtoonLayout,null,2));const blob=await zip.generateAsync({type:'blob',compression:'STORE'},m=>progress('Đang đóng gói bộ ảnh…',m.percent));assertNotAborted(signal);download(blob,'webtoon-da-ghep.zip');status('Đã xuất ảnh PNG đã ghép/chia, chưa chèn bản dịch, kèm tọa độ nguồn trong webtoon-layout.json.');});
 
 function maskedInput(region,zoom=2) {
   const raw=document.createElement('canvas');raw.width=region.w;raw.height=region.h;
@@ -303,12 +324,11 @@ $('translation-input').onchange = e => { const file=e.target.files[0];e.target.v
 });};
 
 $('save-button').onclick = () => task('Đang lưu dự án…',async signal=>{
-  const zip=new JSZip(), pages=[];
-  for(const [i,page] of state.pages.entries()){
-    assertNotAborted(signal);const path=`originals/${String(i+1).padStart(3,'0')}.image`;
-    zip.file(path,page.blob);pages.push({id:page.id,name:page.name,path,boxes:page.boxes});
-  }
-  zip.file('project.json',JSON.stringify({version:1,context:$('translation-context').value,pages}));
+  const zip=new JSZip();
+  const pack=(items,folder)=>items.map((page,i)=>{assertNotAborted(signal);const path=`${folder}/${String(i+1).padStart(4,'0')}.image`;zip.file(path,page.blob);return {id:page.id,name:page.name,path,boxes:page.boxes};});
+  const pages=pack(state.pages,'originals');
+  const webtoonOriginals=state.webtoonOriginals?pack(state.webtoonOriginals,'webtoon-originals'):null;
+  zip.file('project.json',JSON.stringify({version:1,context:$('translation-context').value,pages,webtoonOriginals,webtoonLayout:state.webtoonLayout}));
   const blob=await zip.generateAsync({type:'blob',compression:'STORE'},meta=>progress('Đang đóng gói dự án…',meta.percent));assertNotAborted(signal);
   download(blob,'du-an-dich-truyen.zip');state.dirty=false;status('Đã tạo ZIP dự án gồm ảnh gốc, vùng thoại và bản dịch. Khóa API không được lưu. Hãy kiểm tra tệp tải xuống trước khi đóng tab.');
 });
@@ -319,17 +339,23 @@ $('project-input').onchange=e=>{const file=e.target.files[0];e.target.value='';i
   const zip=await JSZip.loadAsync(file);checkZip(zip);const meta=zip.file('project.json');if(!meta)throw new Error('Không tìm thấy project.json trong ZIP.');
   const raw=await meta.async('string');if(raw.length>10*1024**2)throw new Error('Thông tin dự án quá lớn.');
   const data=JSON.parse(raw);if(data.version!==1||!Array.isArray(data.pages)||!data.pages.length||data.pages.length>LIMITS.pages)throw new Error('Định dạng dự án không được hỗ trợ.');
-  const added=[], ids=new Set(), boxIds=new Set();
-  try{
-    for(const [i,page]of data.pages.entries()){
-      assertNotAborted(signal);progress(`Đang mở trang ${i+1}/${data.pages.length}`,i/data.pages.length*100);
+  if(data.webtoonOriginals!==undefined&&data.webtoonOriginals!==null&&(!Array.isArray(data.webtoonOriginals)||!data.webtoonOriginals.length||data.webtoonOriginals.length>LIMITS.pages))throw new Error('Bản ảnh gốc dự phòng không hợp lệ.');
+  if(data.webtoonOriginals&&!data.webtoonLayout)throw new Error('Dự án thiếu thông tin ghép ảnh.');
+  const added=[],backup=[],ids=new Set(),boxIds=new Set();
+  const unpack=async(rows,target)=>{
+    for(const [i,page]of rows.entries()){
+      assertNotAborted(signal);progress(`Đang mở ảnh ${i+1}/${rows.length}${target===backup?' · bản gốc dự phòng':''}`,i/rows.length*100);
       if(typeof page.id!=='string'||!/^[\w-]{1,80}$/.test(page.id)||ids.has(page.id)||typeof page.name!=='string'||!Array.isArray(page.boxes)||page.boxes.length>LIMITS.boxes)throw new Error('Dữ liệu trang không hợp lệ.');ids.add(page.id);
       const entry=typeof page.path==='string'&&zip.file(page.path);if(!entry)throw new Error('Dự án thiếu ảnh gốc.');const blob=await entry.async('blob'),info=await inspectImage(blob,page.name);
       const boxes=page.boxes.map(b=>validateBox(b,info.width,info.height));for(const b of boxes){if(boxIds.has(b.id))throw new Error('ID ô thoại bị trùng trong dự án.');boxIds.add(b.id);}
-      added.push({id:page.id,name:page.name.slice(0,250),blob,url:URL.createObjectURL(blob),...info,boxes});await tick();
+      target.push({id:page.id,name:page.name.slice(0,250),blob,url:URL.createObjectURL(blob),...info,boxes});await tick();
     }
-    assertNotAborted(signal);state.pages.forEach(p=>URL.revokeObjectURL(p.url));state.pages=added;$('translation-context').value=typeof data.context==='string'?data.context.slice(0,5000):'';state.dirty=false;await activate(added[0].id);status(`Đã mở dự án ${added.length} trang, giữ nguyên ô thoại và bản dịch.`);
-  }catch(error){added.forEach(p=>URL.revokeObjectURL(p.url));throw error;}
+  };
+  try{
+    await unpack(data.pages,added);if(data.webtoonOriginals)await unpack(data.webtoonOriginals,backup);
+    assertNotAborted(signal);releaseProject();state.pages=added;state.webtoonOriginals=backup.length?backup:null;state.webtoonLayout=backup.length?data.webtoonLayout:null;
+    $('translation-context').value=typeof data.context==='string'?data.context.slice(0,5000):'';state.dirty=false;await activate(added[0].id);status(`Đã mở dự án ${added.length} trang, giữ nguyên ô thoại và bản dịch.${backup.length?` Có ${backup.length} ảnh gốc để khôi phục trước khi ghép.`:''}`);
+  }catch(error){[...added,...backup].forEach(p=>URL.revokeObjectURL(p.url));throw error;}
 });};
 $('translation-context').oninput=markDirty;
 
